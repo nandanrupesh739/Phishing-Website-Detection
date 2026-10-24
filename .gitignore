@@ -1,0 +1,57 @@
+# PhishGuard AI — .gitignore
+
+# ── Python ─────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# ── Environment ────────────────────────────────────────────────────────────
+.env
+*.env.local
+
+# ── Dataset (large binary — download manually) ────────────────────────────
+data/*.csv
+data/*.zip
+data/*.gz
+
+# ── Trained model binaries ─────────────────────────────────────────────────
+models/*.joblib
+models/*.pkl
+models/*.json
+!models/.gitkeep
+
+# ── Local database ─────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Reports and generated figures ──────────────────────────────────────────
+reports/*.png
+reports/*.txt
+reports/*.csv
+!reports/.gitkeep
+
+# ── Node / frontend ────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ── IDE ────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

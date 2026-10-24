@@ -1,0 +1,23 @@
+# PhishGuard AI — Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# ── Core ML ──────────────────────────────────────────────────────────────
+numpy>=2.0.0
+pandas>=2.1.0
+scikit-learn>=1.4.0
+joblib>=1.3.0
+
+# ── Visualisation (offline — headless) ───────────────────────────────────
+matplotlib>=3.8.0
+seaborn>=0.13.0
+
+# ── Flask Backend ─────────────────────────────────────────────────────────
+flask>=3.0.0
+flask-cors>=4.0.0
+
+# ── Environment variable management ──────────────────────────────────────
+python-dotenv>=1.0.0
+
+# ── Testing ───────────────────────────────────────────────────────────────
+pytest>=7.4.0
+pytest-cov>=4.1.0
