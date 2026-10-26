@@ -151,7 +151,7 @@ class TestPredictUrlWithMockedModel:
 
         mock_pipe = MagicMock()
         mock_pipe.predict.return_value = np.array([1])           # phishing = 1
-        mock_pipe.predict_proba.return_value = np.array([[0.13, 0.87]])  # P(SAFE)=0.13, P(PHISH)=0.87
+        mock_pipe.predict_proba.return_value = np.array([[0.02, 0.98]])  # P(SAFE)=0.02, P(PHISH)=0.98
 
         pred_module._model = mock_pipe
         pred_module._scaler = None
@@ -159,6 +159,7 @@ class TestPredictUrlWithMockedModel:
         pred_module._metadata = {
             "model_name": "TestModel",
             "model_version": "0.0.1",
+            "decision_threshold": 0.50,
             "feature_names": pred_module.FEATURE_NAMES if hasattr(pred_module, "FEATURE_NAMES") else [],
         }
         yield mock_pipe

@@ -26,10 +26,10 @@ data/*.csv
 data/*.zip
 data/*.gz
 
-# ── Trained model binaries ─────────────────────────────────────────────────
+# ── Trained model binaries (keep large binaries ignored, track metadata/metrics) ────
 models/*.joblib
 models/*.pkl
-models/*.json
+models/*.bin
 !models/.gitkeep
 
 # ── Local database ─────────────────────────────────────────────────────────
@@ -37,11 +37,16 @@ models/*.json
 *.sqlite
 *.sqlite3
 
-# ── Reports and generated figures ──────────────────────────────────────────
+# ── Reports working outputs ────────────────────────────────────────────────
 reports/*.png
 reports/*.txt
 reports/*.csv
+reports/*.json
 !reports/.gitkeep
+
+# ── Tracked Documentation Assets (README images & metrics summary) ─────────
+!docs/images/*.png
+!docs/metrics.json
 
 # ── Node / frontend ────────────────────────────────────────────────────────
 frontend/node_modules/

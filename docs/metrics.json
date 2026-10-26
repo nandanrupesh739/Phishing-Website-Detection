@@ -1,0 +1,213 @@
+{
+  "best_model": "LightGBM (Tabular + TF-IDF)",
+  "decision_threshold": 0.875,
+  "test_metrics": {
+    "model_name": "LightGBM (Tabular + TF-IDF)",
+    "accuracy": 0.9936,
+    "precision": 0.9999,
+    "recall": 0.9845,
+    "f1": 0.9922,
+    "roc_auc": 0.9981,
+    "average_precision": 0.9983,
+    "brier_score": 0.0044,
+    "false_positive_rate": 0.0,
+    "decision_threshold": 0.875,
+    "confusion_matrix": [
+      [
+        20114,
+        1
+      ],
+      [
+        218,
+        13844
+      ]
+    ]
+  },
+  "validation_comparison": {
+    "LightGBM (Tabular + TF-IDF)": {
+      "accuracy": 0.9955,
+      "precision": 0.9987,
+      "recall": 0.9909,
+      "f1": 0.9947,
+      "roc_auc": 0.9986,
+      "fit_time_s": 19.13
+    },
+    "Logistic Regression (Tabular + TF-IDF)": {
+      "accuracy": 0.9924,
+      "precision": 0.9977,
+      "recall": 0.9845,
+      "f1": 0.991,
+      "roc_auc": 0.9983,
+      "fit_time_s": 2.06
+    },
+    "Random Forest (Tabular 36)": {
+      "accuracy": 0.9954,
+      "precision": 0.9984,
+      "recall": 0.9907,
+      "f1": 0.9945,
+      "roc_auc": 0.9979,
+      "fit_time_s": 10.18
+    },
+    "Naive Bayes (Char TF-IDF)": {
+      "accuracy": 0.9405,
+      "precision": 0.9829,
+      "recall": 0.8758,
+      "f1": 0.9263,
+      "roc_auc": 0.9592,
+      "fit_time_s": 0.09
+    }
+  },
+  "feature_importances": [
+    {
+      "feature": "url_length",
+      "importance": 267.0
+    },
+    {
+      "feature": "path_length",
+      "importance": 250.0
+    },
+    {
+      "feature": "num_subdomains",
+      "importance": 214.0
+    },
+    {
+      "feature": "hostname_entropy",
+      "importance": 193.0
+    },
+    {
+      "feature": "domain_vowel_ratio",
+      "importance": 161.0
+    },
+    {
+      "feature": "has_suspicious_tld",
+      "importance": 105.0
+    },
+    {
+      "feature": "longest_token_length",
+      "importance": 103.0
+    },
+    {
+      "feature": "num_digits",
+      "importance": 99.0
+    },
+    {
+      "feature": "digit_ratio",
+      "importance": 81.0
+    },
+    {
+      "feature": "num_hyphens",
+      "importance": 74.0
+    },
+    {
+      "feature": "hostname_length",
+      "importance": 40.0
+    },
+    {
+      "feature": "num_dots",
+      "importance": 32.0
+    },
+    {
+      "feature": "domain_num_digits",
+      "importance": 16.0
+    },
+    {
+      "feature": "has_https",
+      "importance": 2.0
+    },
+    {
+      "feature": "is_url_shortener",
+      "importance": 2.0
+    },
+    {
+      "feature": "has_punycode",
+      "importance": 2.0
+    },
+    {
+      "feature": "has_brand_impersonation",
+      "importance": 1.0
+    },
+    {
+      "feature": "num_at_symbols",
+      "importance": 0.0
+    },
+    {
+      "feature": "num_query_params",
+      "importance": 0.0
+    },
+    {
+      "feature": "num_percent_encoded",
+      "importance": 0.0
+    },
+    {
+      "feature": "num_suspicious_chars",
+      "importance": 0.0
+    },
+    {
+      "feature": "has_ip_hostname",
+      "importance": 0.0
+    },
+    {
+      "feature": "has_non_default_port",
+      "importance": 0.0
+    },
+    {
+      "feature": "has_suspicious_terms",
+      "importance": 0.0
+    },
+    {
+      "feature": "has_repeated_separators",
+      "importance": 0.0
+    },
+    {
+      "feature": "has_long_hostname",
+      "importance": 0.0
+    },
+    {
+      "feature": "has_non_ascii_hostname",
+      "importance": 0.0
+    },
+    {
+      "feature": "has_at_before_host",
+      "importance": 0.0
+    },
+    {
+      "feature": "has_unusual_encoding",
+      "importance": 0.0
+    },
+    {
+      "feature": "num_special_chars",
+      "importance": 0.0
+    },
+    {
+      "feature": "scheme_missing",
+      "importance": 0.0
+    },
+    {
+      "feature": "path_depth",
+      "importance": 0.0
+    },
+    {
+      "feature": "has_double_extension",
+      "importance": 0.0
+    },
+    {
+      "feature": "has_at_in_path",
+      "importance": 0.0
+    },
+    {
+      "feature": "has_double_slash_in_path",
+      "importance": 0.0
+    },
+    {
+      "feature": "has_ip_in_path",
+      "importance": 0.0
+    }
+  ],
+  "dataset_source": "UCI PhiUSIIL Phishing URL Dataset (id=967)",
+  "dataset_size": 235370,
+  "label_distribution": {
+    "SAFE": 134850,
+    "PHISHING": 100520
+  },
+  "split_description": "70/15/15 Domain-Grouped Split (no domain overlap between train/val/test)"
+}

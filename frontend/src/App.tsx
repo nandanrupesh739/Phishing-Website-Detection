@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Shield, Scan, History, BarChart2, Info, AlertTriangle,
-  CheckCircle, XCircle, Wifi, WifiOff, Menu, X
+  CheckCircle, Wifi, WifiOff, Menu, X
 } from 'lucide-react';
 import { fetchHealth } from './services/api';
 import type { HealthResponse } from './types/api';
