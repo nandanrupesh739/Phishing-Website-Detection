@@ -64,7 +64,7 @@ flowchart TD
 
 | Layer | Technology |
 |-------|-----------|
-| ML Framework | scikit-learn 1.4+ |
+| ML Framework | scikit-learn 1.4+, XGBoost 2.0+, LightGBM 4.0+, ucimlrepo |
 | Data Processing | Pandas, NumPy |
 | Model Persistence | Joblib |
 | Visualisation | Matplotlib, Seaborn (training), Recharts (frontend) |
@@ -79,9 +79,9 @@ flowchart TD
 
 **PhiUSIIL Phishing URL Dataset** — UCI Machine Learning Repository
 
-- **Records**: 235,795 URLs
+- **Records**: 235,795 URLs (235,370 after deduplication)
 - **Source**: [https://archive.ics.uci.edu/dataset/967/phiusiil+phishing+url+dataset](https://archive.ics.uci.edu/dataset/967/phiusiil+phishing+url+dataset)
-- **Label**: `1` = Legitimate, `0` = Phishing
+- **Label**: `1` = Legitimate, `0` = Phishing (Standardised to `0` = SAFE, `1` = PHISHING)
 - **License**: CC BY 4.0
 
 > **Citation**: Prasad, A., & Chandra, S. (2023). PhiUSIIL Phishing URL (Website) Dataset.
@@ -119,6 +119,75 @@ flowchart TD
 | 24 | `has_unusual_encoding` | High density of unusual encodings (0/1) |
 | 25 | `num_special_chars` | Count of unusual special characters |
 
+## Model Evaluation & Benchmark Results
+
+### 1. 5-Fold Stratified Cross-Validation (Training Split)
+
+Models were evaluated on the training split using 5-fold stratified cross-validation on the phishing class F1-score:
+
+| Model | Mean F1 | Std F1 | Fit / CV Time |
+| :--- | :---: | :---: | :---: |
+| **XGBoost (Champion)** | **0.9948** | **±0.0003** | 10.6s |
+| **Random Forest** | 0.9948 | ±0.0002 | 52.3s |
+| **Naive Bayes (char TF-IDF)** | 0.9907 | ±0.0006 | 100.2s |
+| **Logistic Regression** | 0.9871 | ±0.0007 | 7.2s |
+
+### 2. Final Evaluation on Held-Out Test Set (20% Split, 47,074 URLs)
+
+After tuning XGBoost with `RandomizedSearchCV` (25 iterations), the final production model was evaluated on the unseen held-out test set:
+
+| Model | Accuracy | Precision (Phish) | Recall (Phish) | F1-Score | ROC-AUC | Fit Time |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **XGBoost (Tuned)** | **99.58%** | **99.86%** | **99.16%** | **0.9951** | **0.9980** | 192.0s |
+| **Random Forest** | 99.58% | 99.86% | 99.15% | 0.9950 | 0.9980 | 12.3s |
+| **Naive Bayes (TF-IDF)** | 99.18% | 98.92% | 99.17% | 0.9905 | 0.9986 | 26.2s |
+| **Logistic Regression** | 99.18% | 99.73% | 98.35% | 0.9904 | 0.9967 | 0.7s |
+
+### 3. Held-Out Confusion Matrix (XGBoost)
+
+$$\text{Total Test Samples} = 47,074$$
+
+| Actual \ Predicted | Predicted Phishing (1) | Predicted Safe (0) | Total |
+| :--- | :---: | :---: | :---: |
+| **Actual Phishing (1)** | **19,938 (True Positive)** | 169 (False Negative) | 20,107 |
+| **Actual Safe (0)** | 28 (False Positive) | **26,939 (True Negative)** | 26,967 |
+
+- **Phishing Detection Rate (Recall)**: $99.16\%$ (19,938 of 20,107 phishing URLs caught)
+- **False Positive Rate**: $0.10\%$ (only 28 false alarms out of 26,967 legitimate test URLs)
+
+### 4. Feature Importance Analysis
+
+Gradient-boosted decision tree feature importance breakdown:
+
+| Rank | Feature | Importance | Interpretation |
+| :---: | :--- | :---: | :--- |
+| 1 | `has_https` | 50.94% | Strongest differentiator; plain HTTP is heavily associated with disposable phishing sites. |
+| 2 | `path_length` | 39.03% | Long multi-directory paths typically host credential forms or deep redirect endpoints. |
+| 3 | `num_digits` | 5.00% | Phishing URLs frequently contain IP octets or generated session tokens with numerical IDs. |
+| 4 | `num_subdomains` | 1.31% | Deep subdomains (`login.account.verify...`) spoof trustworthy brand names. |
+| 5 | `num_suspicious_chars` | 1.18% | Obfuscation markers and query delimiters (`@`, `%`, `=`, `&`). |
+
+### 5. Live API Benchmark & Dataset Artifact Analysis
+
+Testing 10 live URL variations against the active REST API:
+
+| # | Type | URL | Prediction | Confidence | Risk Level |
+| :-: | :--- | :--- | :---: | :---: | :---: |
+| 1 | Legitimate | `https://www.google.com` | **SAFE** | 99.3% | LOW |
+| 2 | Legitimate | `https://www.github.com` | **SAFE** | 99.7% | LOW |
+| 3 | Legitimate | `https://en.wikipedia.org` | **SAFE** | 99.5% | LOW |
+| 4 | Legitimate (College) | `https://www.stanford.edu` | **SAFE** | 99.5% | LOW |
+| 5 | Variant Test | `https://github.com` (no `www`) | **PHISHING** | 99.2% | CRITICAL |
+| 6 | Variant Test | `google.com` (bare domain) | **PHISHING** | 100.0% | CRITICAL |
+| 7 | Malicious (IP host) | `http://192.168.1.100/secure/login.php` | **PHISHING** | 100.0% | CRITICAL |
+| 8 | Malicious (Spoof) | `http://paypal-account-verification.security-update-2026.com/login/verify.php` | **PHISHING** | 100.0% | CRITICAL |
+| 9 | Malicious (@ trick) | `http://user:password@malicious-bank-login.xyz/account/confirm` | **PHISHING** | 100.0% | CRITICAL |
+| 10 | Malicious (Odd TLD) | `http://apple-id-suspended.support-center.top/recovery/auth.html` | **PHISHING** | 100.0% | CRITICAL |
+
+> [!NOTE]
+> **Why do bare domains like `github.com` or `google.com` trigger a false alarm?**  
+> In the PhiUSIIL dataset, 100% of the legitimate training URLs were collected as canonical root homepages starting with `https://www.`. Conversely, bare URLs (`google.com`) or URLs without `www.` (`github.com`) match feature patterns that the tree models heavily associate with short-lived phishing sites (which rarely register and configure `www.` subdomains). Prepending `https://www.` immediately restores safe classification (>99.5%).
+
 ## Quick Start
 
 ### Prerequisites
@@ -149,10 +218,15 @@ Copy-Item .env.example .env
 
 ### 2. Download the Dataset
 
+**Option A (Automated via script):**
+```powershell
+python download_data.py
+```
+
+**Option B (Manual download):**
 1. Visit: https://archive.ics.uci.edu/dataset/967/phiusiil+phishing+url+dataset
-2. Click **Download**
-3. Extract the ZIP file
-4. Place the CSV in the `data/` directory as `phishing_dataset.csv`
+2. Click **Download** and extract the ZIP file
+3. Place the CSV in the `data/` directory as `phishing_dataset.csv`:
 
 ```
 data/
@@ -165,18 +239,19 @@ data/
 # Ensure venv is active
 .\.venv\Scripts\Activate.ps1
 
-# Run training pipeline (15–30 min on first run)
-python -m backend.train_model
+# Run 4-model training, 5-fold CV, and hyperparameter tuning pipeline
+python train.py
 ```
 
 This will:
-- Load and clean the dataset
-- Extract 25 URL features (~3 min for 235k URLs)
-- Train 3 classifiers and select the best
-- Evaluate on the test set
-- Save model to `models/phishguard_model.joblib`
+- Load, deduplicate, and clean the dataset (235,370 URLs)
+- Extract 25 URL features with progress indicators
+- Run 5-fold stratified cross-validation on 4 candidate models
+- Tune the best model (XGBoost) with `RandomizedSearchCV`
+- Evaluate on the held-out test set
+- Save artifacts to `models/model.pkl` and `models/phishguard_model.joblib`
 - Save metrics to `models/model_metrics.json`
-- Save plots to `reports/`
+- Save plots and reports to `reports/`
 
 ### 4. Start the Backend
 
@@ -211,7 +286,7 @@ Base URL: `http://127.0.0.1:5000`
 {
   "status": "ok",
   "model_available": true,
-  "model_name": "HistGradientBoosting",
+  "model_name": "XGBoost",
   "model_version": "1.0.0",
   "feature_count": 25
 }
