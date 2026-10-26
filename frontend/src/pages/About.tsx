@@ -9,16 +9,16 @@ const TECH_STACK = [
 ];
 
 const FEATURES = [
-  'URL-string feature extraction (25 features, no network requests)',
-  'Multi-model training: Logistic Regression, Random Forest, HistGradientBoosting',
-  'Stratified 70/15/15 train/val/test split with fixed random seed',
-  'Class-weighted training to prioritise phishing recall',
-  'Model selection by validation phishing F1-score',
-  'Single held-out test evaluation (no repeated test tuning)',
-  'Confusion matrix, precision-recall curve, feature importance plots',
+  'URL-string feature extraction (36 structural features + character n-gram TF-IDF, no network requests)',
+  'Multi-model evaluation: LightGBM, Logistic Regression, Random Forest, Naive Bayes',
+  '70/15/15 Domain-Grouped split by registered domain (zero train/val/test domain leakage)',
+  'Probability calibration via CalibratedClassifierCV with reliability curve and Brier score',
+  'Decision threshold tuned on validation set to achieve target 98% phishing recall',
+  'Single held-out test evaluation (touched once for final honest reporting)',
+  'Confusion matrix, ROC curve, reliability diagram, and feature importance reports',
   'Local SQLite scan history with pagination and clear functionality',
-  'Responsive cybersecurity-themed dashboard',
-  'Full REST API with input validation and safe error messages',
+  'Responsive cybersecurity-themed dashboard with risk level indicators',
+  'Full REST API with rate limiting, input validation, and safe error handling',
 ];
 
 const LIMITATIONS = [
@@ -169,14 +169,15 @@ export default function About() {
       <Section title="Machine Learning Workflow" icon={<GitBranch size={18} className="text-violet-400" />}>
         <ol className="space-y-3">
           {[
-            ['Load Dataset', 'Detect URL and label columns; validate CSV structure'],
-            ['Clean Data',   'Remove missing values, duplicates, and unmappable labels'],
-            ['Extract Features', '25 URL-string features via urllib.parse (no network calls)'],
-            ['Stratified Split', '70% train / 15% validation / 15% test with fixed seed'],
-            ['Train Models', 'Logistic Regression, Random Forest, HistGradientBoosting — all with class weighting'],
-            ['Select Model', 'Compare on validation set; select by phishing class F1-score'],
-            ['Test Evaluation', 'Evaluate best model once on held-out test set; report all metrics'],
-            ['Save Artefacts', 'Persist model, metadata, metrics, and evaluation plots'],
+            ['Load Dataset', 'Detect URL and label columns; validate CSV structure and calculate SHA-256 fingerprint'],
+            ['Clean & Normalise', 'Remove missing values and duplicates; apply canonical normalisation across training & inference'],
+            ['Extract Features', '36 structural features via offline tldextract & regex + character n-gram TF-IDF (no network calls)'],
+            ['Domain-Grouped Split', '70% train / 15% validation / 15% test partitioned by registered domain (zero leakage)'],
+            ['Train Candidates', 'Fit LightGBM, Logistic Regression, Random Forest, and Naive Bayes models with class weighting'],
+            ['Validation Selection', 'Compare models on validation set; calibrate winning model with CalibratedClassifierCV'],
+            ['Tune Threshold', 'Select decision threshold on validation set to hit target 98% recall and minimize false positives'],
+            ['Held-Out Test', 'Evaluate best calibrated model exactly once on test set; generate reliability curve and confusion matrix'],
+            ['Save Artefacts', 'Persist model bundle, metadata JSON, metrics contract, and visual report plots'],
           ].map(([step, desc], i) => (
             <li key={step} className="flex items-start gap-3">
               <div className="w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center shrink-0 mt-0.5"

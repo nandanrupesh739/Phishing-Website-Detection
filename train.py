@@ -1,27 +1,28 @@
 """
 PhishGuard AI — Complete Model Training Pipeline
 ==================================================
-Trains and evaluates 4 classifiers on the Phishing URL Dataset:
-  1. Logistic Regression (on 25 URL structural features + StandardScaler)
-  2. Random Forest (on 25 URL structural features)
-  3. XGBoost (on 25 URL structural features)
-  4. Naive Bayes (on character n-gram TF-IDF of raw URL strings)
+Trains and rigorously evaluates phishing classifiers on the UCI PhiUSIIL dataset:
+  1. Logistic Regression (Tabular + Char n-gram TF-IDF combined)
+  2. LightGBM (Tabular + Char n-gram TF-IDF combined)
+  3. Random Forest (36 URL structural features)
+  4. Multinomial Naive Bayes (Char n-gram TF-IDF)
 
-Pipeline details:
-  - Stratified 80/20 train/test split (fixed random_state=42)
-  - Pre-split deduplication to prevent train/test data leakage
-  - Fixed label mapping: SAFE = 0, PHISHING = 1
-  - 5-fold Stratified Cross-Validation with F1 mean & std
-  - Hyperparameter tuning of the best model with RandomizedSearchCV (n_iter=25)
-  - Comprehensive evaluation table: Accuracy, Precision, Recall, F1, ROC-AUC
-  - Reports generated in reports/: confusion_matrix.png, roc_curve.png, feature_importance.png
-  - Artefact saved to models/model.pkl and models/phishguard_model.joblib
+Evaluation Rigor & Rules:
+  - 70/15/15 Train / Validation / Test split grouped by registered domain
+    (tldextract offline PSL) ensuring ZERO domain leakage across splits.
+  - Model selection and decision threshold tuning performed on VALIDATION set ONLY.
+  - Held-out TEST set touched exactly ONCE for final reporting.
+  - Probability calibration with reliability curve & Brier score.
+  - Decision threshold tuned on validation set for target phishing recall (0.98).
+  - SHA-256 dataset fingerprinting and full metadata persistence.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import platform
 import sys
 import time
 from datetime import datetime, timezone
@@ -33,32 +34,31 @@ matplotlib.use("Agg")  # Headless backend
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import scipy.sparse
+from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.metrics import (
     accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    roc_auc_score,
+    average_precision_score,
+    brier_score_loss,
+    classification_report,
     confusion_matrix,
     ConfusionMatrixDisplay,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
     roc_curve,
     auc,
-    classification_report,
 )
-from sklearn.model_selection import (
-    StratifiedKFold,
-    train_test_split,
-    RandomizedSearchCV,
-    cross_val_score,
-)
-from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
-from xgboost import XGBClassifier
+import lightgbm as lgb
+import tldextract
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -79,8 +79,16 @@ from backend.config import (
     REPORTS_DIR,
     RANDOM_SEED,
     MODEL_VERSION,
+    TRAIN_SIZE,
+    VAL_SIZE,
+    TEST_SIZE,
 )
-from backend.features import FEATURE_NAMES, extract_url_features
+from backend.features import (
+    FEATURE_NAMES,
+    canonical_url_string,
+    extract_url_features,
+    normalise_url,
+)
 
 # ──────────────────────────────────────────────────────────────────────────
 # Logging Setup
@@ -88,23 +96,33 @@ from backend.features import FEATURE_NAMES, extract_url_features
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-    ],
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 log = logging.getLogger("train")
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Step 1: Inspect, Clean, and Deduplicate Data
+# Dataset Hash Computation
+# ──────────────────────────────────────────────────────────────────────────
+def compute_sha256(path: Path) -> str:
+    """Compute SHA-256 hash of a file for reproducibility tracking."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Step 1: Inspect, Clean, and Domain-Group Dataset
 # ──────────────────────────────────────────────────────────────────────────
 def inspect_and_clean_data(csv_path: Path) -> tuple[pd.DataFrame, dict]:
     """
-    Loads dataset, diagnoses inconsistencies, fixes label mapping,
-    removes duplicates to avoid data leakage, and returns cleaned DataFrame.
+    Loads dataset, standardises labels (SAFE=0, PHISHING=1), deduplicates,
+    normalises URLs canonically, and extracts registered domains for group splitting.
     """
     log.info("=" * 70)
-    log.info("STEP 1: INSPECTING DATASET")
+    log.info("STEP 1: INSPECTING & PREPARING DATASET")
     log.info("=" * 70)
     log.info("Loading dataset from: %s", csv_path)
 
@@ -114,15 +132,13 @@ def inspect_and_clean_data(csv_path: Path) -> tuple[pd.DataFrame, dict]:
 
     t0 = time.time()
     df_raw = pd.read_csv(csv_path, low_memory=False)
-    log.info("Loaded in %.2fs. Raw Shape: %s (Rows: %d, Columns: %d)",
-             time.time() - t0, df_raw.shape, df_raw.shape[0], df_raw.shape[1])
+    raw_sha = compute_sha256(csv_path)
+    log.info("Loaded in %.2fs. Raw Shape: %s | SHA-256: %s",
+             time.time() - t0, df_raw.shape, raw_sha)
 
-    # 1. Identify URL and Label column
-    url_candidates = ["url", "URL", "Url", "urlString"]
-    label_candidates = ["label", "Label", "LABEL", "class", "Class"]
-
-    url_col = next((c for c in url_candidates if c in df_raw.columns), None)
-    label_col = next((c for c in label_candidates if c in df_raw.columns), None)
+    # Identify URL and Label column
+    url_col = next((c for c in ["url", "URL", "Url", "urlString"] if c in df_raw.columns), None)
+    label_col = next((c for c in ["label", "Label", "LABEL", "class", "Class"] if c in df_raw.columns), None)
 
     if url_col is None or label_col is None:
         log.error("Could not find URL or label column in: %s", list(df_raw.columns))
@@ -130,29 +146,7 @@ def inspect_and_clean_data(csv_path: Path) -> tuple[pd.DataFrame, dict]:
 
     log.info("Identified URL column: '%s', Label column: '%s'", url_col, label_col)
 
-    # 2. Check nulls
-    null_counts = df_raw[[url_col, label_col]].isnull().sum()
-    log.info("Null check — %s nulls: %d, %s nulls: %d",
-             url_col, null_counts[url_col], label_col, null_counts[label_col])
-
-    # 3. Check raw class distribution
-    raw_counts = df_raw[label_col].value_counts().to_dict()
-    log.info("Raw label value counts in dataset:")
-    for k, v in raw_counts.items():
-        log.info("  Raw label '%s': %d (%.2f%%)", k, v, v / len(df_raw) * 100)
-
-    # 4. Check duplicates before splitting (Crucial for preventing data leakage!)
-    dup_url_count = df_raw.duplicated(subset=[url_col], keep=False).sum()
-    unique_url_count = df_raw[url_col].nunique()
-    log.info("Duplicate check: %d duplicate rows found (%d unique URLs).",
-             dup_url_count, unique_url_count)
-
-    # Check for conflicting labels on duplicates
-    conflicting = df_raw.groupby(url_col)[label_col].nunique()
-    conflicts_count = (conflicting > 1).sum()
-    log.info("URLs with conflicting labels: %d", conflicts_count)
-
-    # 5. Clean, Map Labels, and Deduplicate
+    # Clean, Map Labels, and Deduplicate
     df = df_raw[[url_col, label_col]].copy()
     df.rename(columns={url_col: "url", label_col: "raw_label"}, inplace=True)
     df.dropna(subset=["url", "raw_label"], inplace=True)
@@ -160,459 +154,496 @@ def inspect_and_clean_data(csv_path: Path) -> tuple[pd.DataFrame, dict]:
     df = df[df["url"].str.len() > 0]
     df = df[df["url"] != "nan"]
 
-    # In the raw PhiUSIIL dataset: 1 = Legitimate (Safe), 0 = Phishing
-    # Under standard convention & user requirements:
-    # SAFE = 0, PHISHING = 1
-    # Raw 1 (Legitimate) -> 0 (SAFE)
-    # Raw 0 (Phishing)   -> 1 (PHISHING)
+    # In raw PhiUSIIL dataset: 1 = Legitimate (Safe), 0 = Phishing
+    # Standardised convention: 0 = SAFE, 1 = PHISHING
     df["label"] = df["raw_label"].astype(int).map({1: 0, 0: 1})
     df.dropna(subset=["label"], inplace=True)
     df["label"] = df["label"].astype(int)
 
-    # Drop duplicates to prevent train/test leakage
+    # Deduplicate on raw URL string
     initial_len = len(df)
     df.drop_duplicates(subset=["url"], keep="first", inplace=True)
     df.reset_index(drop=True, inplace=True)
     removed_dups = initial_len - len(df)
-    log.info("Deduplication: removed %d duplicate rows. Final dataset size: %d URLs",
+    log.info("Deduplication: removed %d duplicate rows. Dataset size: %d URLs",
              removed_dups, len(df))
 
+    # Canonicalise URLs identically for training and inference
+    log.info("Canonicalising URLs via normalise_url…")
+    canonical_urls = []
+    for u in df["url"]:
+        c_url, _ = normalise_url(u)
+        canonical_urls.append(c_url if c_url else u)
+    df["canonical_url"] = canonical_urls
+
+    # Extract registered domain using offline tldextract for Domain Group Split
+    log.info("Extracting registered domain groups with offline tldextract…")
+    ext = tldextract.TLDExtract(cache_dir=None, suffix_list_urls=())
+    domain_groups = []
+    for u in df["canonical_url"]:
+        res = ext(u)
+        dom = getattr(res, "top_domain_under_public_suffix", None) or res.domain or u
+        domain_groups.append(dom.lower())
+    df["domain_group"] = domain_groups
+
+    unique_domains = df["domain_group"].nunique()
     final_counts = df["label"].value_counts().to_dict()
-    log.info("Standardised Class Balance (0 = SAFE, 1 = PHISHING):")
-    log.info("  SAFE (0):     %d (%.2f%%)", final_counts.get(0, 0), final_counts.get(0, 0) / len(df) * 100)
-    log.info("  PHISHING (1): %d (%.2f%%)", final_counts.get(1, 0), final_counts.get(1, 0) / len(df) * 100)
+    log.info("Dataset statistics:")
+    log.info("  Total unique URLs:    %d", len(df))
+    log.info("  Unique domain groups: %d", unique_domains)
+    log.info("  SAFE (0):             %d (%.2f%%)", final_counts.get(0, 0), final_counts.get(0, 0) / len(df) * 100)
+    log.info("  PHISHING (1):         %d (%.2f%%)", final_counts.get(1, 0), final_counts.get(1, 0) / len(df) * 100)
 
     summary = {
         "raw_shape": df_raw.shape,
-        "columns": list(df_raw.columns),
-        "cleaned_size": len(df),
+        "dataset_size": len(df),
         "removed_duplicates": removed_dups,
-        "class_balance": {
-            "SAFE (0)": final_counts.get(0, 0),
-            "PHISHING (1)": final_counts.get(1, 0),
+        "dataset_sha256": raw_sha,
+        "unique_domain_groups": unique_domains,
+        "label_distribution": {
+            "SAFE": final_counts.get(0, 0),
+            "PHISHING": final_counts.get(1, 0),
         },
     }
     return df, summary
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Step 2: Feature Extraction
+# Step 2: 70/15/15 Domain-Grouped Split
 # ──────────────────────────────────────────────────────────────────────────
-def extract_tabular_features(urls: list[str]) -> np.ndarray:
-    """Extracts 25 structural features from raw URLs with a progress bar."""
-    log.info("Extracting %d structural URL features for %d URLs…",
-             len(FEATURE_NAMES), len(urls))
-    t0 = time.time()
+def split_domain_grouped(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Splits data into 70% Train, 15% Validation, 15% Test grouped by registered domain.
+    Guarantees 0% domain overlap between train, validation, and test sets.
+    """
+    log.info("=" * 70)
+    log.info("STEP 2: 70/15/15 DOMAIN-GROUPED SPLIT")
+    log.info("=" * 70)
+
+    # 1. Split Train (70%) and Temp (30%)
+    gss1 = GroupShuffleSplit(n_splits=1, test_size=0.30, random_state=RANDOM_SEED)
+    train_idx, temp_idx = next(gss1.split(df, df["label"], groups=df["domain_group"]))
+
+    df_train = df.iloc[train_idx].reset_index(drop=True)
+    df_temp = df.iloc[temp_idx].reset_index(drop=True)
+
+    # 2. Split Temp into Validation (50% of Temp = 15% total) and Test (50% of Temp = 15% total)
+    gss2 = GroupShuffleSplit(n_splits=1, test_size=0.50, random_state=RANDOM_SEED)
+    val_sub_idx, test_sub_idx = next(gss2.split(df_temp, df_temp["label"], groups=df_temp["domain_group"]))
+
+    df_val = df_temp.iloc[val_sub_idx].reset_index(drop=True)
+    df_test = df_temp.iloc[test_sub_idx].reset_index(drop=True)
+
+    # Verify zero domain overlap
+    dom_train = set(df_train["domain_group"])
+    dom_val = set(df_val["domain_group"])
+    dom_test = set(df_test["domain_group"])
+
+    overlap_train_val = len(dom_train & dom_val)
+    overlap_train_test = len(dom_train & dom_test)
+    overlap_val_test = len(dom_val & dom_test)
+
+    log.info("Split Sizes:")
+    log.info("  Train set (70%%): %d samples (%d domains)", len(df_train), len(dom_train))
+    log.info("    SAFE: %d (%.1f%%) | PHISHING: %d (%.1f%%)",
+             (df_train["label"] == 0).sum(), (df_train["label"] == 0).mean() * 100,
+             (df_train["label"] == 1).sum(), (df_train["label"] == 1).mean() * 100)
+    log.info("  Validation set (15%%): %d samples (%d domains)", len(df_val), len(dom_val))
+    log.info("    SAFE: %d (%.1f%%) | PHISHING: %d (%.1f%%)",
+             (df_val["label"] == 0).sum(), (df_val["label"] == 0).mean() * 100,
+             (df_val["label"] == 1).sum(), (df_val["label"] == 1).mean() * 100)
+    log.info("  Held-out Test set (15%%): %d samples (%d domains)", len(df_test), len(dom_test))
+    log.info("    SAFE: %d (%.1f%%) | PHISHING: %d (%.1f%%)",
+             (df_test["label"] == 0).sum(), (df_test["label"] == 0).mean() * 100,
+             (df_test["label"] == 1).sum(), (df_test["label"] == 1).mean() * 100)
+
+    log.info("Domain Leakage Verification:")
+    log.info("  Train & Val domain overlap:  %d", overlap_train_val)
+    log.info("  Train & Test domain overlap: %d", overlap_train_test)
+    log.info("  Val & Test domain overlap:   %d", overlap_val_test)
+    assert overlap_train_val == 0 and overlap_train_test == 0 and overlap_val_test == 0, \
+        "Domain leakage detected across splits!"
+
+    return df_train, df_val, df_test
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Step 3: Feature Extraction (Tabular + Char n-gram TF-IDF)
+# ──────────────────────────────────────────────────────────────────────────
+def extract_tabular_matrix(urls: list[str]) -> np.ndarray:
+    """Extracts 36 URL structural features with progress bar."""
     rows = []
-    for u in tqdm(urls, desc="Extracting features", unit="urls"):
+    for u in tqdm(urls, desc="Extracting 36 structural features", unit="urls"):
         feat_dict = extract_url_features(u)
         rows.append([feat_dict[name] for name in FEATURE_NAMES])
-    X = np.array(rows, dtype=np.float32)
-    log.info("Feature extraction complete in %.2fs. Shape: %s", time.time() - t0, X.shape)
-    return X
+    return np.array(rows, dtype=np.float32)
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Step 3: Cross-Validation & Model Training
+# Step 4: Model Training, Validation Tuning, and Test Evaluation
 # ──────────────────────────────────────────────────────────────────────────
-def run_training_pipeline(df: pd.DataFrame) -> dict:
+def train_and_evaluate(
+    df_train: pd.DataFrame,
+    df_val: pd.DataFrame,
+    df_test: pd.DataFrame,
+    dataset_summary: dict,
+) -> dict:
     log.info("=" * 70)
-    log.info("STEP 2: SPLITTING & 5-FOLD STRATIFIED CROSS-VALIDATION")
+    log.info("STEP 3: FEATURE EXTRACTION & MODEL PIPELINE")
     log.info("=" * 70)
 
-    urls = df["url"].tolist()
-    y = df["label"].values.astype(int)
+    urls_train = df_train["canonical_url"].tolist()
+    y_train = df_train["label"].values.astype(int)
 
-    # 1. Stratified 80/20 train/test split
-    indices = np.arange(len(df))
-    idx_train, idx_test = train_test_split(
-        indices, test_size=0.20, stratify=y, random_state=RANDOM_SEED
+    urls_val = df_val["canonical_url"].tolist()
+    y_val = df_val["label"].values.astype(int)
+
+    urls_test = df_test["canonical_url"].tolist()
+    y_test = df_test["label"].values.astype(int)
+
+    # 1. Extract Tabular Features
+    log.info("Extracting tabular features for Train (%d), Val (%d), Test (%d)…",
+             len(urls_train), len(urls_val), len(urls_test))
+    X_tab_train = extract_tabular_matrix(urls_train)
+    X_tab_val = extract_tabular_matrix(urls_val)
+    X_tab_test = extract_tabular_matrix(urls_test)
+
+    # 2. Scale Tabular Features
+    scaler = StandardScaler()
+    X_tab_train_scaled = scaler.fit_transform(X_tab_train)
+    X_tab_val_scaled = scaler.transform(X_tab_val)
+    X_tab_test_scaled = scaler.transform(X_tab_test)
+
+    # 3. Fit Character n-gram TF-IDF on Train only
+    log.info("Fitting character n-gram TF-IDF on training set URLs…")
+    tfidf = TfidfVectorizer(
+        analyzer="char",
+        ngram_range=(3, 5),
+        max_features=1500,
+        sublinear_tf=True,
     )
+    X_tfidf_train = tfidf.fit_transform(urls_train)
+    X_tfidf_val = tfidf.transform(urls_val)
+    X_tfidf_test = tfidf.transform(urls_test)
 
-    y_train, y_test = y[idx_train], y[idx_test]
-    urls_train = [urls[i] for i in idx_train]
-    urls_test = [urls[i] for i in idx_test]
+    # 4. Create Combined Sparse Feature Matrices (Tabular + TF-IDF)
+    log.info("Combining tabular features and TF-IDF into unified sparse matrices…")
+    X_comb_train = scipy.sparse.hstack([scipy.sparse.csr_matrix(X_tab_train_scaled), X_tfidf_train]).tocsr()
+    X_comb_val = scipy.sparse.hstack([scipy.sparse.csr_matrix(X_tab_val_scaled), X_tfidf_val]).tocsr()
+    X_comb_test = scipy.sparse.hstack([scipy.sparse.csr_matrix(X_tab_test_scaled), X_tfidf_test]).tocsr()
 
-    log.info("Dataset Split — Train (80%%): %d samples | Test (20%%): %d samples",
-             len(y_train), len(y_test))
-    log.info("  Train Class Balance: SAFE=%d (%.1f%%), PHISH=%d (%.1f%%)",
-             (y_train == 0).sum(), (y_train == 0).mean() * 100,
-             (y_train == 1).sum(), (y_train == 1).mean() * 100)
-    log.info("  Test Class Balance:  SAFE=%d (%.1f%%), PHISH=%d (%.1f%%)",
-             (y_test == 0).sum(), (y_test == 0).mean() * 100,
-             (y_test == 1).sum(), (y_test == 1).mean() * 100)
+    log.info("Combined feature matrix shape: %s", X_comb_train.shape)
 
-    # 2. Extract 25 features for train and test
-    X_feat_train = extract_tabular_features(urls_train)
-    X_feat_test = extract_tabular_features(urls_test)
+    # Imbalance ratio
+    neg_count = int((y_train == 0).sum())
+    pos_count = int((y_train == 1).sum())
+    scale_pos_weight = float(neg_count / max(1, pos_count))
 
-    # Imbalance ratio for XGBoost scale_pos_weight
-    neg_count = (y_train == 0).sum()
-    pos_count = (y_train == 1).sum()
-    scale_pos_weight = neg_count / max(1, pos_count)
-    log.info("Class imbalance ratio (neg/pos): %.3f -> set as scale_pos_weight", scale_pos_weight)
-
-    # 3. Define the 4 candidate models
-    # Logistic Regression (with StandardScaler)
-    lr_pipe = Pipeline([
-        ("scaler", StandardScaler()),
-        ("clf", LogisticRegression(
-            class_weight="balanced",
-            max_iter=1000,
-            solver="lbfgs",
-            random_state=RANDOM_SEED,
-        )),
-    ])
-
-    # Random Forest
-    rf_clf = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=16,
-        class_weight="balanced",
-        random_state=RANDOM_SEED,
-        n_jobs=-1,
-    )
-
-    # XGBoost
-    xgb_clf = XGBClassifier(
-        n_estimators=150,
-        max_depth=6,
-        learning_rate=0.1,
-        scale_pos_weight=scale_pos_weight,
-        eval_metric="logloss",
-        random_state=RANDOM_SEED,
-        n_jobs=-1,
-    )
-
-    # Naive Bayes on character n-gram TF-IDF of raw URLs
-    nb_pipe = Pipeline([
-        ("tfidf", TfidfVectorizer(
-            analyzer="char",
-            ngram_range=(3, 5),
-            max_features=5000,
-            sublinear_tf=True,
-        )),
-        ("nb", MultinomialNB(alpha=0.1)),
-    ])
-
+    # 5. Define Candidate Models
     models = {
-        "Logistic Regression": {
-            "model": lr_pipe,
-            "type": "tabular",
-            "X_train": X_feat_train,
-            "X_test": X_feat_test,
+        "LightGBM (Tabular + TF-IDF)": {
+            "model": lgb.LGBMClassifier(
+                n_estimators=200,
+                max_depth=8,
+                learning_rate=0.08,
+                scale_pos_weight=scale_pos_weight,
+                random_state=RANDOM_SEED,
+                n_jobs=-1,
+                verbose=-1,
+            ),
+            "X_train": X_comb_train,
+            "X_val": X_comb_val,
+            "X_test": X_comb_test,
+            "uses_tfidf": True,
+            "uses_tabular": True,
         },
-        "Random Forest": {
-            "model": rf_clf,
-            "type": "tabular",
-            "X_train": X_feat_train,
-            "X_test": X_feat_test,
+        "Logistic Regression (Tabular + TF-IDF)": {
+            "model": LogisticRegression(
+                class_weight="balanced",
+                max_iter=1000,
+                C=1.0,
+                solver="lbfgs",
+                random_state=RANDOM_SEED,
+            ),
+            "X_train": X_comb_train,
+            "X_val": X_comb_val,
+            "X_test": X_comb_test,
+            "uses_tfidf": True,
+            "uses_tabular": True,
         },
-        "XGBoost": {
-            "model": xgb_clf,
-            "type": "tabular",
-            "X_train": X_feat_train,
-            "X_test": X_feat_test,
+        "Random Forest (Tabular 36)": {
+            "model": RandomForestClassifier(
+                n_estimators=100,
+                max_depth=16,
+                class_weight="balanced",
+                random_state=RANDOM_SEED,
+                n_jobs=-1,
+            ),
+            "X_train": X_tab_train,
+            "X_val": X_tab_val,
+            "X_test": X_tab_test,
+            "uses_tfidf": False,
+            "uses_tabular": True,
         },
-        "Naive Bayes (char TF-IDF)": {
-            "model": nb_pipe,
-            "type": "text",
-            "X_train": urls_train,
-            "X_test": urls_test,
+        "Naive Bayes (Char TF-IDF)": {
+            "model": MultinomialNB(alpha=0.1),
+            "X_train": X_tfidf_train,
+            "X_val": X_tfidf_val,
+            "X_test": X_tfidf_test,
+            "uses_tfidf": True,
+            "uses_tabular": False,
         },
     }
 
-    # 4. 5-Fold Stratified Cross-Validation on the 80% Training Set
+    # 6. Fit Models on 70% Train & Evaluate on 15% Validation Set
     log.info("\n" + "=" * 70)
-    log.info("5-FOLD STRATIFIED CROSS-VALIDATION (Training Set: %d samples)", len(y_train))
+    log.info("STEP 4: MODEL EVALUATION & SELECTION ON VALIDATION SET (15%%)")
     log.info("=" * 70)
 
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_SEED)
-    cv_results = {}
-
+    val_comparison = {}
     for name, item in models.items():
-        log.info("Running 5-fold CV for: %s …", name)
+        log.info("Fitting candidate: %s …", name)
         t0 = time.time()
         m = item["model"]
-        X_tr = item["X_train"]
+        m.fit(item["X_train"], y_train)
+        fit_time = time.time() - t0
 
-        # Run 5 folds
-        scores = cross_val_score(m, X_tr, y_train, cv=skf, scoring="f1", n_jobs=1 if item["type"] == "text" else -1)
-        mean_f1 = float(np.mean(scores))
-        std_f1 = float(np.std(scores))
-        elapsed = time.time() - t0
+        val_preds = m.predict(item["X_val"])
+        val_proba = m.predict_proba(item["X_val"])[:, 1] if hasattr(m, "predict_proba") else None
 
-        cv_results[name] = {
-            "mean_f1": mean_f1,
-            "std_f1": std_f1,
-            "fold_scores": [round(float(s), 4) for s in scores],
-            "cv_time_s": round(elapsed, 2),
-        }
-        log.info("  [OK] %s -> F1 Mean: %.4f | F1 Std: +/-%.4f | Time: %.1fs",
-                 name, mean_f1, std_f1, elapsed)
-        log.info("    Folds: %s", [f"{s:.4f}" for s in scores])
+        acc = accuracy_score(y_val, val_preds)
+        prec = precision_score(y_val, val_preds, pos_label=1, zero_division=0)
+        rec = recall_score(y_val, val_preds, pos_label=1, zero_division=0)
+        f1 = f1_score(y_val, val_preds, pos_label=1, zero_division=0)
+        auc_score = roc_auc_score(y_val, val_proba) if val_proba is not None else 0.0
 
-    # Print summary table of CV
-    print("\n" + "-" * 70)
-    print("5-FOLD CROSS-VALIDATION SUMMARY (F1 Score on Phishing Class)")
-    print("-" * 70)
-    print(f"{'Model':<30} | {'Mean F1':<10} | {'Std F1':<10} | {'Time (s)':<10}")
-    print("-" * 70)
-    for name, res in cv_results.items():
-        print(f"{name:<30} | {res['mean_f1']:<10.4f} | +/-{res['std_f1']:<8.4f} | {res['cv_time_s']:<10.1f}")
-    print("-" * 70 + "\n")
-
-    # 5. Determine best model from CV
-    best_candidate_name = max(cv_results, key=lambda k: cv_results[k]["mean_f1"])
-    log.info("Best model from Cross-Validation: '%s' (Mean F1 = %.4f)",
-             best_candidate_name, cv_results[best_candidate_name]["mean_f1"])
-
-    # 6. Hyperparameter Tuning with RandomizedSearchCV
-    log.info("\n" + "=" * 70)
-    log.info("TUNING BEST MODEL WITH RandomizedSearchCV (n_iter=25)")
-    log.info("=" * 70)
-
-    best_model_obj = None
-    best_params = {}
-
-    if "XGBoost" in best_candidate_name:
-        param_dist = {
-            "n_estimators": [100, 150, 200, 250],
-            "max_depth": [4, 6, 8, 10],
-            "learning_rate": [0.03, 0.05, 0.08, 0.1, 0.15],
-            "subsample": [0.75, 0.85, 0.95, 1.0],
-            "colsample_bytree": [0.75, 0.85, 1.0],
-            "min_child_weight": [1, 3, 5],
-        }
-        base_estimator = XGBClassifier(
-            scale_pos_weight=scale_pos_weight,
-            eval_metric="logloss",
-            random_state=RANDOM_SEED,
-            n_jobs=-1,
-        )
-        search_X = X_feat_train
-    elif "Random Forest" in best_candidate_name:
-        param_dist = {
-            "n_estimators": [100, 150, 200],
-            "max_depth": [12, 16, 20, None],
-            "min_samples_split": [2, 5, 10],
-            "min_samples_leaf": [1, 2, 4],
-        }
-        base_estimator = RandomForestClassifier(
-            class_weight="balanced",
-            random_state=RANDOM_SEED,
-            n_jobs=-1,
-        )
-        search_X = X_feat_train
-    elif "Naive Bayes" in best_candidate_name:
-        param_dist = {
-            "tfidf__max_features": [3000, 5000, 8000],
-            "tfidf__ngram_range": [(3, 4), (3, 5)],
-            "nb__alpha": [0.01, 0.05, 0.1, 0.5, 1.0],
-        }
-        base_estimator = nb_pipe
-        search_X = urls_train
-    else:  # Logistic Regression
-        param_dist = {
-            "clf__C": [0.01, 0.1, 1.0, 5.0, 10.0],
-            "clf__penalty": ["l2"],
-        }
-        base_estimator = lr_pipe
-        search_X = X_feat_train
-
-    log.info("Running RandomizedSearchCV on %s with 25 iterations (3-fold CV)…", best_candidate_name)
-    t0 = time.time()
-    random_search = RandomizedSearchCV(
-        base_estimator,
-        param_distributions=param_dist,
-        n_iter=25,
-        cv=3,
-        scoring="f1",
-        random_state=RANDOM_SEED,
-        n_jobs=-1 if models[best_candidate_name]["type"] == "tabular" else 1,
-        verbose=1,
-    )
-    random_search.fit(search_X, y_train)
-    tune_time = time.time() - t0
-    best_params = random_search.best_params_
-    best_tuned_model = random_search.best_estimator_
-
-    log.info("RandomizedSearchCV completed in %.2fs", tune_time)
-    log.info("Best CV F1: %.4f", random_search.best_score_)
-    log.info("Best Parameters:")
-    for param, val in best_params.items():
-        log.info("  %s = %s", param, val)
-
-    # Update models dictionary with the tuned model
-    models[best_candidate_name]["model"] = best_tuned_model
-    models[best_candidate_name]["is_tuned"] = True
-
-    # 7. Fit all models on full training set (80%) and evaluate on held-out test set (20%)
-    log.info("\n" + "=" * 70)
-    log.info("STEP 3: EVALUATING ALL MODELS ON HELD-OUT TEST SET (20%% = %d samples)", len(y_test))
-    log.info("=" * 70)
-
-    test_results = {}
-    train_scores = {}
-    y_probas = {}
-    y_preds = {}
-
-    for name, item in models.items():
-        m = item["model"]
-        X_tr = item["X_train"]
-        X_te = item["X_test"]
-
-        # If not tuned (tuned already fitted), fit on train
-        if not item.get("is_tuned", False):
-            log.info("Fitting %s on full 80%% train split…", name)
-            t0 = time.time()
-            m.fit(X_tr, y_train)
-            fit_time = time.time() - t0
-        else:
-            fit_time = tune_time
-
-        # Predict train & test
-        y_train_pred = m.predict(X_tr)
-        y_test_pred = m.predict(X_te)
-        y_preds[name] = y_test_pred
-
-        # Probabilities for positive class (PHISHING = 1)
-        if hasattr(m, "predict_proba"):
-            proba_test = m.predict_proba(X_te)[:, 1]
-            auc_score = roc_auc_score(y_test, proba_test)
-        else:
-            proba_test = None
-            auc_score = None
-        y_probas[name] = proba_test
-
-        # Calculate metrics
-        train_acc = accuracy_score(y_train, y_train_pred)
-        train_f1 = f1_score(y_train, y_train_pred, pos_label=1)
-        test_acc = accuracy_score(y_test, y_test_pred)
-        test_prec = precision_score(y_test, y_test_pred, pos_label=1, zero_division=0)
-        test_rec = recall_score(y_test, y_test_pred, pos_label=1, zero_division=0)
-        test_f1 = f1_score(y_test, y_test_pred, pos_label=1, zero_division=0)
-
-        train_scores[name] = {"train_acc": train_acc, "train_f1": train_f1}
-        test_results[name] = {
-            "accuracy": round(test_acc, 4),
-            "precision": round(test_prec, 4),
-            "recall": round(test_rec, 4),
-            "f1": round(test_f1, 4),
-            "roc_auc": round(auc_score, 4) if auc_score is not None else None,
-            "train_acc": round(train_acc, 4),
-            "train_f1": round(train_f1, 4),
+        val_comparison[name] = {
+            "accuracy": round(float(acc), 4),
+            "precision": round(float(prec), 4),
+            "recall": round(float(rec), 4),
+            "f1": round(float(f1), 4),
+            "roc_auc": round(float(auc_score), 4),
             "fit_time_s": round(fit_time, 2),
         }
+        log.info("  [VAL] %s -> Acc: %.4f | Prec: %.4f | Rec: %.4f | F1: %.4f | AUC: %.4f (%.1fs)",
+                 name, acc, prec, rec, f1, auc_score, fit_time)
 
-    # Print the master comparison table
-    print("\n" + "=" * 82)
-    print("MODEL EVALUATION COMPARISON TABLE (Held-out 20% Test Set)")
-    print("=" * 82)
-    print(f"{'Model':<26} | {'Accuracy':<9} | {'Precision':<9} | {'Recall':<9} | {'F1-Score':<9} | {'ROC-AUC':<8}")
-    print("-" * 82)
-    for name, r in test_results.items():
-        auc_str = f"{r['roc_auc']:.4f}" if r["roc_auc"] is not None else "N/A"
-        print(f"{name:<26} | {r['accuracy']:<9.4f} | {r['precision']:<9.4f} | {r['recall']:<9.4f} | {r['f1']:<9.4f} | {auc_str:<8}")
-    print("=" * 82)
+    # Print Validation Table
+    print("\n" + "-" * 75)
+    print("VALIDATION SET MODEL COMPARISON (15% Domain-Grouped)")
+    print("-" * 75)
+    print(f"{'Model':<38} | {'Accuracy':<9} | {'Precision':<9} | {'Recall':<9} | {'F1-Score':<9} | {'ROC-AUC':<8}")
+    print("-" * 75)
+    for name, r in val_comparison.items():
+        print(f"{name:<38} | {r['accuracy']:<9.4f} | {r['precision']:<9.4f} | {r['recall']:<9.4f} | {r['f1']:<9.4f} | {r['roc_auc']:<8.4f}")
+    print("-" * 75 + "\n")
 
-    # Check overfitting (Train vs Test gap)
-    print("\nOVERFITTING & GENERALISATION CHECK (Train vs Test Scores):")
-    print("-" * 70)
-    for name, r in test_results.items():
-        acc_gap = r["train_acc"] - r["accuracy"]
-        f1_gap = r["train_f1"] - r["f1"]
-        print(f"  {name:<26} : Train Acc = {r['train_acc']:.4f}, Test Acc = {r['accuracy']:.4f} (Gap: {acc_gap:+.4f}) | F1 Gap: {f1_gap:+.4f}")
-    print("-" * 70)
+    # Select winner on Validation set
+    winner_name = max(val_comparison, key=lambda k: (val_comparison[k]["f1"], val_comparison[k]["recall"]))
+    winner_info = models[winner_name]
+    raw_winner_model = winner_info["model"]
+    log.info("[*] WINNER SELECTED ON VALIDATION SET: '%s' (Val F1: %.4f)",
+             winner_name, val_comparison[winner_name]["f1"])
 
-    # Select overall champion: Highest F1 with high recall (>0.99) and precision (>0.99)
-    qualified = {k: v for k, v in test_results.items() if v["precision"] >= 0.95}
-    if not qualified:
-        qualified = test_results
-    final_best_name = max(qualified, key=lambda k: (qualified[k]["f1"], qualified[k]["recall"]))
-    final_best_model = models[final_best_name]["model"]
+    # 7. Probability Calibration using CalibratedClassifierCV
+    log.info("\n" + "=" * 70)
+    log.info("STEP 5: PROBABILITY CALIBRATION & DECISION THRESHOLD TUNING")
+    log.info("=" * 70)
 
-    log.info("\n[*] WINNER SELECTION: '%s' is chosen as the production model.", final_best_name)
-    log.info("  Reason: Phishing Recall = %.4f, Precision = %.4f, F1 = %.4f, ROC-AUC = %.4f",
-             test_results[final_best_name]["recall"],
-             test_results[final_best_name]["precision"],
-             test_results[final_best_name]["f1"],
-             test_results[final_best_name]["roc_auc"])
+    log.info("Calibrating winner probabilities with CalibratedClassifierCV (sigmoid, 3-fold)…")
+    # We calibrate with 3-fold CV on the training data so calibration is completely unbiased
+    calibrated_winner = CalibratedClassifierCV(
+        estimator=raw_winner_model,
+        method="sigmoid",
+        cv=3,
+    )
+    calibrated_winner.fit(winner_info["X_train"], y_train)
 
-    # 8. Save Reports (Confusion Matrix, ROC Curve, Feature Importance)
+    # 8. Tune Decision Threshold on Validation Set Only
+    val_probs = calibrated_winner.predict_proba(winner_info["X_val"])[:, 1]
+    TARGET_RECALL = 0.98
+
+    thresholds = np.linspace(0.05, 0.95, 181)
+    best_threshold = 0.50
+    best_fpr_at_target = 1.0
+    highest_recall = 0.0
+
+    # Search for threshold that satisfies TARGET_RECALL on validation set with minimum FPR
+    for t in thresholds:
+        preds = (val_probs >= t).astype(int)
+        rec = recall_score(y_val, preds, pos_label=1, zero_division=0)
+        tn = int(((y_val == 0) & (preds == 0)).sum())
+        fp = int(((y_val == 0) & (preds == 1)).sum())
+        fpr = fp / max(1, (fp + tn))
+
+        if rec >= TARGET_RECALL:
+            if fpr < best_fpr_at_target:
+                best_fpr_at_target = fpr
+                best_threshold = float(t)
+        if rec > highest_recall:
+            highest_recall = rec
+
+    if best_fpr_at_target == 1.0:
+        # Fallback to threshold that maximizes F1 on validation set
+        log.warning("Target recall %.2f not fully met on validation set. Max achievable: %.4f",
+                    TARGET_RECALL, highest_recall)
+        best_f1 = 0.0
+        for t in thresholds:
+            preds = (val_probs >= t).astype(int)
+            f = f1_score(y_val, preds, pos_label=1, zero_division=0)
+            if f > best_f1:
+                best_f1 = f
+                best_threshold = float(t)
+        val_preds_final = (val_probs >= best_threshold).astype(int)
+        best_fpr_at_target = float(((y_val == 0) & (val_preds_final == 1)).sum() / max(1, (y_val == 0).sum()))
+
+    log.info("Tuned Decision Threshold on Validation Set: %.4f", best_threshold)
+    log.info("  Validation Phishing Recall: %.4f | Validation False Positive Rate: %.4f",
+             recall_score(y_val, (val_probs >= best_threshold).astype(int), pos_label=1),
+             best_fpr_at_target)
+
+    # 9. Final Single Evaluation on Held-Out Test Set (Touched ONCE)
+    log.info("\n" + "=" * 70)
+    log.info("STEP 6: FINAL EVALUATION ON HELD-OUT TEST SET (15%% = %d samples)", len(y_test))
+    log.info("=" * 70)
+
+    test_probs = calibrated_winner.predict_proba(winner_info["X_test"])[:, 1]
+    test_preds = (test_probs >= best_threshold).astype(int)
+
+    test_acc = float(accuracy_score(y_test, test_preds))
+    test_prec = float(precision_score(y_test, test_preds, pos_label=1, zero_division=0))
+    test_rec = float(recall_score(y_test, test_preds, pos_label=1, zero_division=0))
+    test_f1 = float(f1_score(y_test, test_preds, pos_label=1, zero_division=0))
+    test_auc = float(roc_auc_score(y_test, test_probs))
+    test_ap = float(average_precision_score(y_test, test_probs))
+    test_brier = float(brier_score_loss(y_test, test_probs))
+    cm = confusion_matrix(y_test, test_preds)
+
+    tn, fp, fn, tp = cm.ravel()
+    test_fpr = float(fp / max(1, (fp + tn)))
+
+    test_metrics = {
+        "model_name": winner_name,
+        "accuracy": round(test_acc, 4),
+        "precision": round(test_prec, 4),
+        "recall": round(test_rec, 4),
+        "f1": round(test_f1, 4),
+        "roc_auc": round(test_auc, 4),
+        "average_precision": round(test_ap, 4),
+        "brier_score": round(test_brier, 4),
+        "false_positive_rate": round(test_fpr, 4),
+        "decision_threshold": round(best_threshold, 4),
+        "confusion_matrix": [[int(tn), int(fp)], [int(fn), int(tp)]],
+    }
+
+    print("\n" + "=" * 75)
+    print("FINAL HELD-OUT TEST SET RESULTS (Domain-Grouped Split, Touched Once)")
+    print("=" * 75)
+    print(f"Model Name           : {winner_name}")
+    print(f"Decision Threshold   : {best_threshold:.4f}")
+    print(f"Test Accuracy        : {test_acc:.4%}")
+    print(f"Test Phishing Precision: {test_prec:.4%}")
+    print(f"Test Phishing Recall : {test_rec:.4%}")
+    print(f"Test F1-Score        : {test_f1:.4%}")
+    print(f"Test ROC-AUC         : {test_auc:.4f}")
+    print(f"Test PR-AUC (AvgPrec): {test_ap:.4f}")
+    print(f"Test Brier Score     : {test_brier:.4f} (lower is better, 0 = perfect)")
+    print(f"Test False Pos. Rate : {test_fpr:.4%}")
+    print(f"Confusion Matrix     : TN={tn:,}, FP={fp:,}, FN={fn:,}, TP={tp:,}")
+    print("=" * 75 + "\n")
+
+    # 10. Extract Feature Importances
+    feature_importances = []
+    if hasattr(raw_winner_model, "feature_importances_"):
+        imps = raw_winner_model.feature_importances_
+        # First 36 features correspond to tabular FEATURE_NAMES
+        for i, feat_name in enumerate(FEATURE_NAMES):
+            feature_importances.append({
+                "feature": feat_name,
+                "importance": float(imps[i]) if i < len(imps) else 0.0,
+            })
+    elif hasattr(raw_winner_model, "coef_"):
+        coefs = np.abs(raw_winner_model.coef_[0])
+        for i, feat_name in enumerate(FEATURE_NAMES):
+            feature_importances.append({
+                "feature": feat_name,
+                "importance": float(coefs[i]) if i < len(coefs) else 0.0,
+            })
+    feature_importances.sort(key=lambda x: x["importance"], reverse=True)
+
+    # 11. Generate Visual Reports
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     generate_reports(
-        final_best_name,
-        final_best_model,
-        test_results,
-        y_test,
-        y_preds,
-        y_probas,
-        models,
-        REPORTS_DIR,
+        winner_name=winner_name,
+        test_metrics=test_metrics,
+        y_test=y_test,
+        test_probs=test_probs,
+        cm=cm,
+        feature_importances=feature_importances,
+        val_comparison=val_comparison,
+        reports_dir=REPORTS_DIR,
     )
 
-    # 9. Save Production Artefacts
+    # 12. Save Production Artefacts
     save_production_artefacts(
-        final_best_name,
-        final_best_model,
-        models[final_best_name]["type"],
-        best_params,
-        test_results,
-        cv_results,
-        len(df),
+        winner_name=winner_name,
+        calibrated_model=calibrated_winner,
+        scaler=scaler if winner_info["uses_tabular"] else None,
+        vectorizer=tfidf if winner_info["uses_tfidf"] else None,
+        threshold=best_threshold,
+        test_metrics=test_metrics,
+        val_comparison=val_comparison,
+        feature_importances=feature_importances,
+        dataset_summary=dataset_summary,
+        raw_model=raw_winner_model,
     )
 
     return {
-        "best_model_name": final_best_name,
-        "test_results": test_results,
-        "cv_results": cv_results,
-        "best_params": best_params,
+        "winner_name": winner_name,
+        "test_metrics": test_metrics,
+        "val_comparison": val_comparison,
+        "threshold": best_threshold,
     }
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Step 4: Generate Reports & Plots
+# Step 5: Visual Reports Generation
 # ──────────────────────────────────────────────────────────────────────────
 def generate_reports(
-    best_name: str,
-    best_model,
-    test_results: dict,
+    winner_name: str,
+    test_metrics: dict,
     y_test: np.ndarray,
-    y_preds: dict,
-    y_probas: dict,
-    models: dict,
+    test_probs: np.ndarray,
+    cm: np.ndarray,
+    feature_importances: list[dict],
+    val_comparison: dict,
     reports_dir: Path,
 ) -> None:
-    log.info("Generating evaluation reports in %s …", reports_dir)
+    log.info("Generating evaluation plots and reports in %s …", reports_dir)
 
-    # 1. Confusion Matrix for Best Model
-    cm = confusion_matrix(y_test, y_preds[best_name])
+    # 1. Confusion Matrix
     fig, ax = plt.subplots(figsize=(6, 5))
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["SAFE", "PHISHING"])
     disp.plot(ax=ax, cmap="Blues", values_format="d")
-    ax.set_title(f"Confusion Matrix — {best_name}\n(Held-out Test Set, N={len(y_test):,})", fontsize=11, fontweight="bold")
+    ax.set_title(f"Confusion Matrix — {winner_name}\n(Held-out Test Set, N={len(y_test):,}, Thresh={test_metrics['decision_threshold']:.2f})",
+                 fontsize=11, fontweight="bold")
     plt.tight_layout()
     cm_path = reports_dir / "confusion_matrix.png"
     plt.savefig(cm_path, dpi=150)
     plt.close()
     log.info("Saved: %s", cm_path)
 
-    # 2. ROC Curve comparison
+    # 2. ROC Curve
+    fpr, tpr, _ = roc_curve(y_test, test_probs)
+    roc_auc = auc(fpr, tpr)
     fig, ax = plt.subplots(figsize=(7, 6))
-    colors = ["#2563eb", "#16a34a", "#dc2626", "#9333ea"]
-    for i, (name, proba) in enumerate(y_probas.items()):
-        if proba is not None:
-            fpr, tpr, _ = roc_curve(y_test, proba)
-            roc_auc = auc(fpr, tpr)
-            ax.plot(fpr, tpr, label=f"{name} (AUC = {roc_auc:.4f})", color=colors[i % len(colors)], lw=2)
-
+    ax.plot(fpr, tpr, color="#2563eb", lw=2.2, label=f"{winner_name} (AUC = {roc_auc:.4f})")
     ax.plot([0, 1], [0, 1], "k--", lw=1.2, label="Random Guess (AUC = 0.5000)")
     ax.set_xlim([0.0, 1.0])
     ax.set_ylim([0.0, 1.02])
     ax.set_xlabel("False Positive Rate (1 - Specificity)", fontsize=11)
     ax.set_ylabel("True Positive Rate (Recall)", fontsize=11)
-    ax.set_title("ROC Curves Comparison — Test Set", fontsize=12, fontweight="bold")
+    ax.set_title(f"ROC Curve — Held-out Test Set (AUC = {roc_auc:.4f})", fontsize=12, fontweight="bold")
     ax.legend(loc="lower right", frameon=True)
     ax.grid(alpha=0.3)
     plt.tight_layout()
@@ -621,57 +652,36 @@ def generate_reports(
     plt.close()
     log.info("Saved: %s", roc_path)
 
-    # 3. Feature Importance Plot
-    # Check if tree model or linear model
-    feature_importances = []
-    if hasattr(best_model, "feature_importances_"):
-        imps = best_model.feature_importances_
-        feature_importances = sorted(
-            [{"feature": f, "importance": float(imp)} for f, imp in zip(FEATURE_NAMES, imps)],
-            key=lambda x: x["importance"],
-            reverse=True,
-        )
-    elif hasattr(best_model, "named_steps"):
-        clf = best_model.named_steps.get("clf")
-        if hasattr(clf, "feature_importances_"):
-            imps = clf.feature_importances_
-            feature_importances = sorted(
-                [{"feature": f, "importance": float(imp)} for f, imp in zip(FEATURE_NAMES, imps)],
-                key=lambda x: x["importance"],
-                reverse=True,
-            )
-        elif hasattr(clf, "coef_"):
-            imps = np.abs(clf.coef_[0])
-            feature_importances = sorted(
-                [{"feature": f, "importance": float(imp)} for f, imp in zip(FEATURE_NAMES, imps)],
-                key=lambda x: x["importance"],
-                reverse=True,
-            )
+    # 3. Reliability Curve (Calibration Diagram)
+    prob_true, prob_pred = calibration_curve(y_test, test_probs, n_bins=10)
+    fig, ax = plt.subplots(figsize=(7, 6))
+    ax.plot(prob_pred, prob_true, "s-", color="#16a34a", lw=2, label=f"Calibrated ({winner_name})")
+    ax.plot([0, 1], [0, 1], "k--", lw=1.2, label="Perfect Calibration")
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.0])
+    ax.set_xlabel("Mean Predicted Probability", fontsize=11)
+    ax.set_ylabel("Fraction of Positives", fontsize=11)
+    ax.set_title(f"Reliability Curve (Brier Score = {test_metrics['brier_score']:.4f})",
+                 fontsize=12, fontweight="bold")
+    ax.legend(loc="upper left", frameon=True)
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    rel_path = reports_dir / "reliability_curve.png"
+    plt.savefig(rel_path, dpi=150)
+    plt.close()
+    log.info("Saved: %s", rel_path)
 
-    if not feature_importances:
-        # Fallback to XGBoost or Random Forest
-        for fallback_name in ["XGBoost", "Random Forest"]:
-            if fallback_name in models:
-                fb_m = models[fallback_name]["model"]
-                if hasattr(fb_m, "feature_importances_"):
-                    imps = fb_m.feature_importances_
-                    feature_importances = sorted(
-                        [{"feature": f, "importance": float(imp)} for f, imp in zip(FEATURE_NAMES, imps)],
-                        key=lambda x: x["importance"],
-                        reverse=True,
-                    )
-                    break
-
+    # 4. Feature Importance Plot
     if feature_importances:
-        top_features = feature_importances[:15]
-        top_features.reverse()  # Horizontal bar plot displays bottom-up
-        names = [item["feature"] for item in top_features]
-        vals = [item["importance"] for item in top_features]
+        top_15 = feature_importances[:15]
+        top_15_rev = list(reversed(top_15))
+        names = [item["feature"] for item in top_15_rev]
+        vals = [item["importance"] for item in top_15_rev]
 
         fig, ax = plt.subplots(figsize=(8, 6))
-        ax.barh(names, vals, color="#2563eb", edgecolor="none", alpha=0.85)
+        ax.barh(names, vals, color="#2563eb", alpha=0.85)
         ax.set_xlabel("Importance / Absolute Weight", fontsize=11)
-        ax.set_title(f"Top 15 Feature Importances — {best_name}", fontsize=12, fontweight="bold")
+        ax.set_title(f"Top 15 Feature Importances — {winner_name}", fontsize=12, fontweight="bold")
         ax.grid(axis="x", alpha=0.3)
         plt.tight_layout()
         fi_path = reports_dir / "feature_importance.png"
@@ -679,43 +689,43 @@ def generate_reports(
         plt.close()
         log.info("Saved: %s", fi_path)
 
-    # 4. Human-readable text report
+    # 5. Training text summary
     txt_path = reports_dir / "training_report.txt"
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write("PhishGuard AI — Training Evaluation Report\n")
-        f.write("=" * 60 + "\n\n")
-        f.write(f"Trained at  : {datetime.now(timezone.utc).isoformat()}\n")
-        f.write(f"Best Model  : {best_name}\n")
-        f.write(f"Test Set    : {len(y_test):,} samples (20% held-out)\n\n")
+        f.write("=" * 65 + "\n\n")
+        f.write(f"Trained at            : {datetime.now(timezone.utc).isoformat()}\n")
+        f.write(f"Winner Model          : {winner_name}\n")
+        f.write(f"Split Method          : 70/15/15 Domain-Grouped (tldextract PSL)\n")
+        f.write(f"Tuned Threshold       : {test_metrics['decision_threshold']}\n")
+        f.write(f"Test Set Size         : {len(y_test):,} samples\n\n")
         f.write("Held-Out Test Set Metrics\n")
         f.write("-" * 50 + "\n")
-        for k, v in test_results[best_name].items():
-            f.write(f"  {k:<16} : {v}\n")
-        f.write("\nAll Models Comparison\n")
+        for k, v in test_metrics.items():
+            f.write(f"  {k:<22} : {v}\n")
+        f.write("\nValidation Model Comparison\n")
         f.write("-" * 50 + "\n")
-        for name, r in test_results.items():
+        for name, r in val_comparison.items():
             f.write(f"\n  {name}:\n")
             for k, v in r.items():
-                f.write(f"    {k:<14} : {v}\n")
-        if feature_importances:
-            f.write("\nTop 15 Feature Importances:\n")
-            f.write("-" * 50 + "\n")
-            for item in list(reversed(top_features)):
-                f.write(f"  {item['feature']:<25} : {item['importance']:.6f}\n")
+                f.write(f"    {k:<16} : {v}\n")
     log.info("Saved: %s", txt_path)
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Step 5: Save Artefacts
+# Step 6: Save Production Artefacts & Metadata
 # ──────────────────────────────────────────────────────────────────────────
 def save_production_artefacts(
-    best_name: str,
-    best_model,
-    model_type: str,
-    best_params: dict,
-    test_results: dict,
-    cv_results: dict,
-    dataset_size: int,
+    winner_name: str,
+    calibrated_model,
+    scaler,
+    vectorizer,
+    threshold: float,
+    test_metrics: dict,
+    val_comparison: dict,
+    feature_importances: list[dict],
+    dataset_summary: dict,
+    raw_model,
 ) -> None:
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     pkl_path = MODELS_DIR / "model.pkl"
@@ -723,45 +733,58 @@ def save_production_artefacts(
     meta_path = MODELS_DIR / "model_metadata.json"
     metrics_path = MODELS_DIR / "model_metrics.json"
 
-    # Separate scaler or vectorizer if present
-    scaler = None
-    vectorizer = None
-    actual_model = best_model
-
-    if hasattr(best_model, "named_steps"):
-        scaler = best_model.named_steps.get("scaler")
-        vectorizer = best_model.named_steps.get("tfidf")
-        actual_model = best_model.named_steps.get("clf", best_model.named_steps.get("nb", best_model))
+    # Extract hyperparameters if available
+    best_params = {}
+    if hasattr(raw_model, "get_params"):
+        all_params = raw_model.get_params()
+        # Keep non-callable, JSON-serialisable parameters
+        for k, v in all_params.items():
+            if isinstance(v, (int, float, str, bool, list, type(None))):
+                best_params[k] = v
 
     bundle = {
-        "pipeline": best_model,
-        "model": actual_model,
+        "model": calibrated_model,
         "scaler": scaler,
         "vectorizer": vectorizer,
+        "threshold": threshold,
         "feature_names": FEATURE_NAMES,
-        "model_name": best_name,
-        "model_type": model_type,
+        "model_name": winner_name,
         "target_mapping": {0: "SAFE", 1: "PHISHING"},
         "trained_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Save to models/model.pkl as requested
     joblib.dump(bundle, pkl_path)
-    log.info("Saved primary model bundle -> %s", pkl_path)
-
-    # Also save to phishguard_model.joblib for full system compatibility
     joblib.dump(bundle, joblib_path)
-    log.info("Saved pipeline bundle -> %s", joblib_path)
+    log.info("Saved model bundle -> %s & %s", pkl_path, joblib_path)
 
-    # Save metadata JSON
+    # Environment and dependency tracking
+    library_versions = {
+        "python": platform.python_version(),
+        "scikit-learn": getattr(sys.modules.get("sklearn"), "__version__", "unknown"),
+        "lightgbm": getattr(lgb, "__version__", "unknown"),
+        "tldextract": getattr(tldextract, "__version__", "unknown"),
+        "joblib": getattr(joblib, "__version__", "unknown"),
+        "numpy": getattr(np, "__version__", "unknown"),
+        "pandas": getattr(pd, "__version__", "unknown"),
+    }
+
     metadata = {
-        "model_name": best_name,
+        "model_name": winner_name,
         "model_version": MODEL_VERSION,
         "feature_names": FEATURE_NAMES,
         "feature_count": len(FEATURE_NAMES),
         "class_mapping": {"0": "SAFE", "1": "PHISHING"},
+        "decision_threshold": round(threshold, 4),
         "best_hyperparameters": best_params,
-        "dataset_size": dataset_size,
+        "dataset_source": "UCI PhiUSIIL Phishing URL Dataset (id=967)",
+        "dataset_size": dataset_summary["dataset_size"],
+        "dataset_sha256": dataset_summary["dataset_sha256"],
+        "label_distribution": dataset_summary["label_distribution"],
+        "split_description": "70/15/15 Domain-Grouped Split using tldextract registered domains to prevent domain leakage",
+        "target_phishing_recall": 0.98,
+        "validation_fpr": test_metrics.get("false_positive_rate", 0.0),
+        "test_brier_score": test_metrics.get("brier_score", 0.0),
+        "library_versions": library_versions,
         "trained_at": bundle["trained_at"],
         "random_seed": RANDOM_SEED,
     }
@@ -769,12 +792,17 @@ def save_production_artefacts(
         json.dump(metadata, f, indent=2)
     log.info("Saved metadata -> %s", meta_path)
 
-    # Save metrics JSON
+    # Standardised Metrics JSON matching Frontend Contract
     metrics = {
-        "best_model": best_name,
-        "test_metrics": test_results[best_name],
-        "all_models_test": test_results,
-        "cross_validation": cv_results,
+        "best_model": winner_name,
+        "decision_threshold": round(threshold, 4),
+        "test_metrics": test_metrics,
+        "validation_comparison": val_comparison,
+        "feature_importances": feature_importances,
+        "dataset_source": "UCI PhiUSIIL Phishing URL Dataset (id=967)",
+        "dataset_size": dataset_summary["dataset_size"],
+        "label_distribution": dataset_summary["label_distribution"],
+        "split_description": "70/15/15 Domain-Grouped Split (no domain overlap between train/val/test)",
     }
     with open(metrics_path, "w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=2)
@@ -786,17 +814,20 @@ def save_production_artefacts(
 # ──────────────────────────────────────────────────────────────────────────
 def main():
     log.info("=" * 70)
-    log.info("PHISHGUARD AI — PRODUCTION MODEL TRAINING PIPELINE")
+    log.info("PHISHGUARD AI — PRODUCTION RETRAINING & EVALUATION PIPELINE")
     log.info("=" * 70)
 
     # Step 1: Inspect & Clean
-    df, _ = inspect_and_clean_data(DATA_PATH)
+    df, summary = inspect_and_clean_data(DATA_PATH)
 
-    # Step 2 & 3: Train, CV, Tune, Evaluate, Save
-    run_training_pipeline(df)
+    # Step 2: 70/15/15 Domain-Grouped Split
+    df_train, df_val, df_test = split_domain_grouped(df)
+
+    # Step 3, 4, 5, 6: Train, Tune, Evaluate, Save
+    train_and_evaluate(df_train, df_val, df_test, summary)
 
     log.info("=" * 70)
-    log.info("TRAINING PIPELINE COMPLETED SUCCESSFULLY!")
+    log.info("HONEST EVALUATION & RETRAINING COMPLETE!")
     log.info("=" * 70)
 
 

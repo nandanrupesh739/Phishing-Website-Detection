@@ -274,52 +274,67 @@ def predict_url(url: str) -> dict:
     else:
         X_input = raw_vec
 
-    # ── 4. Prediction ────────────────────────────────────────────────────
-    try:
-        pred_label = int(_model.predict(X_input)[0])
-    except Exception as exc:
-        log.error("Prediction failed: %s", exc)
-        raise PredictionError(f"Model prediction failed: {exc}") from exc
+    # ── 4. Decision Threshold & Prediction ──────────────────────────────
+    threshold = 0.50
+    if _metadata and "decision_threshold" in _metadata:
+        try:
+            threshold = float(_metadata["decision_threshold"])
+        except (ValueError, TypeError):
+            threshold = 0.50
+    elif _bundle and "threshold" in _bundle:
+        try:
+            threshold = float(_bundle["threshold"])
+        except (ValueError, TypeError):
+            threshold = 0.50
 
-    # Target: 1 = PHISHING, 0 = SAFE
-    prediction_str = "PHISHING" if pred_label == 1 else "SAFE"
-
-    # ── 5. Score / probability & confidence percentage ───────────────────
     score: float | None = None
     confidence_pct: float | None = None
     score_type: str = "unavailable"
 
+    # Probabilistic prediction using threshold
     try:
         probas = _model.predict_proba(X_input)[0]
         # probas[0] = P(SAFE), probas[1] = P(PHISHING)
         prob_safe = float(probas[0])
         prob_phish = float(probas[1])
+
+        # Apply calibrated threshold to phishing probability
+        pred_label = 1 if prob_phish >= threshold else 0
         if pred_label == 1:
             score = prob_phish
             confidence_pct = prob_phish * 100.0
         else:
             score = prob_safe
             confidence_pct = prob_safe * 100.0
-        score_type = "model_probability"
+        score_type = "calibrated_probability"
     except Exception:
+        try:
+            pred_label = int(_model.predict(X_input)[0])
+        except Exception as exc:
+            log.error("Prediction failed: %s", exc)
+            raise PredictionError(f"Model prediction failed: {exc}") from exc
         score = None
         confidence_pct = None
         score_type = "unavailable"
 
-    # ── 6. Risk level ────────────────────────────────────────────────────
+    # Target: 1 = PHISHING, 0 = SAFE
+    prediction_str = "PHISHING" if pred_label == 1 else "SAFE"
+
+    # ── 5. Risk level ────────────────────────────────────────────────────
     effective_score = score if score is not None else (0.8 if pred_label == 1 else 0.2)
     risk_level = _map_risk_level(effective_score, pred_label)
 
-    # ── 7. Indicators ────────────────────────────────────────────────────
+    # ── 6. Indicators ────────────────────────────────────────────────────
     indicators = get_risk_indicators(feat_dict)
 
-    # ── 8. Return structured result ──────────────────────────────────────
+    # ── 7. Return structured result ──────────────────────────────────────
     confidence_str = f"{confidence_pct:.1f}%" if confidence_pct is not None else "N/A"
     return {
         "url": url,
         "prediction": prediction_str,
         "confidence": round(confidence_pct, 2) if confidence_pct is not None else None,
         "confidence_str": confidence_str,
+        "threshold": round(threshold, 4),
         "risk_level": risk_level,
         "score": round(score, 4) if score is not None else None,
         "score_type": score_type,

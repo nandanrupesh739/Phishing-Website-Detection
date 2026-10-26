@@ -223,3 +223,35 @@ class TestPredictUrlWithMockedModel:
         result = predict_url("https://www.google.com/search?q=test")
         assert result["prediction"] == "SAFE"
         assert result["risk_level"] == "LOW"
+
+    def test_threshold_applied_in_prediction(self):
+        import backend.predictor as pred_module
+        # Set a custom high threshold: 0.80
+        pred_module._metadata = {"decision_threshold": 0.80}
+
+        from backend.predictor import predict_url
+        # P(phish) = 0.70 < 0.80 threshold -> SAFE
+        pred_module._model.predict_proba.return_value = np.array([[0.30, 0.70]])
+        res_below = predict_url("https://borderline-site.com")
+        assert res_below["prediction"] == "SAFE"
+        assert res_below["threshold"] == 0.80
+
+        # P(phish) = 0.85 >= 0.80 threshold -> PHISHING
+        pred_module._model.predict_proba.return_value = np.array([[0.15, 0.85]])
+        res_above = predict_url("https://phish-site.com/login")
+        assert res_above["prediction"] == "PHISHING"
+        assert res_above["threshold"] == 0.80
+
+    def test_confidence_and_threshold_returned(self):
+        import backend.predictor as pred_module
+        pred_module._model.predict_proba.return_value = np.array([[0.01, 0.99]])
+        pred_module._metadata = {"decision_threshold": 0.50}
+
+        from backend.predictor import predict_url
+        res = predict_url("https://very-evil.com/login")
+        assert "confidence" in res
+        assert "confidence_str" in res
+        assert "threshold" in res
+        assert res["confidence"] == 99.0
+        assert res["confidence_str"] == "99.0%"
+        assert res["threshold"] == 0.50
