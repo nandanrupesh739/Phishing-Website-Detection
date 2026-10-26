@@ -392,7 +392,7 @@ phishing-website-detection/
 | Problem | Solution |
 |---------|----------|
 | PowerShell execution policy error | `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` |
-| `Model file not found` error | Run `python -m backend.train_model` first |
+| `Model file not found` error | Run `python train.py` first |
 | Dataset not found | Download CSV to `data/phishing_dataset.csv` |
 | Port 5000 in use | Change `FLASK_PORT` in `.env` |
 | Port 5173 in use | Change `server.port` in `frontend/vite.config.ts` |

@@ -87,6 +87,16 @@ class TestValidateUrl:
         ok, err = validate_url("http://xn--nxasmq6b.com")
         assert ok is True
 
+    def test_invalid_port_non_numeric_rejected(self):
+        ok, err = validate_url("http://example.com:abc/path")
+        assert ok is False
+        assert "port" in err.lower()
+
+    def test_invalid_port_out_of_range_rejected(self):
+        ok, err = validate_url("http://example.com:99999/path")
+        assert ok is False
+        assert "port" in err.lower()
+
 
 # ---------------------------------------------------------------------------
 # Risk Level Mapping

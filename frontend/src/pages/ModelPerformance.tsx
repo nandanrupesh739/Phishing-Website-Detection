@@ -9,24 +9,28 @@ import { fetchModelMetrics, fetchModelInfo } from '../services/api';
 import type { ModelMetricsResponse, ModelInfoResponse } from '../types/api';
 
 function MetricCard({ label, value, color = '#3b82f6', sub }: {
-  label: string; value: number | null; color?: string; sub?: string;
+  label: string; value: number | null | undefined; color?: string; sub?: string;
 }) {
-  const pct = value !== null ? `${(value * 100).toFixed(1)}%` : '—';
+  const isValid = typeof value === 'number' && !isNaN(value);
+  const pct = isValid ? `${(value * 100).toFixed(1)}%` : '—';
   return (
     <div className="glass-card p-4 space-y-2">
       <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</div>
       <div className="text-3xl font-bold" style={{ color }}>{pct}</div>
       {sub && <div className="text-xs text-slate-500">{sub}</div>}
-      {value !== null && (
+      {isValid && (
         <div className="h-1.5 rounded-full bg-slate-800">
-          <div className="h-full rounded-full" style={{ width: `${value * 100}%`, background: color }} />
+          <div className="h-full rounded-full" style={{ width: `${Math.min(Math.max(value * 100, 0), 100)}%`, background: color }} />
         </div>
       )}
     </div>
   );
 }
 
-function ConfusionMatrix({ cm }: { cm: number[][] }) {
+function ConfusionMatrix({ cm }: { cm?: number[][] | null }) {
+  if (!cm || !Array.isArray(cm) || cm.length < 2 || !Array.isArray(cm[0])) {
+    return <div className="text-slate-500 text-sm py-4">Confusion matrix unavailable</div>;
+  }
   const labels = ['Phishing', 'Legitimate'];
   const total = cm.flat().reduce((a, b) => a + b, 0);
 
@@ -41,7 +45,7 @@ function ConfusionMatrix({ cm }: { cm: number[][] }) {
           <div key={l} className="text-center text-xs font-semibold text-slate-400 pb-1">↓ Pred {l}</div>
         ))}
         {cm.map((row, ri) => (
-          <>
+          <div key={`row-${ri}`} className="contents">
             <div key={`l${ri}`} className="text-xs font-semibold text-slate-400 pr-3 self-center">
               Actual {labels[ri]}
             </div>
@@ -50,7 +54,7 @@ function ConfusionMatrix({ cm }: { cm: number[][] }) {
               const isDiag = ri === ci;
               return (
                 <div
-                  key={ci}
+                  key={`cell-${ri}-${ci}`}
                   className="flex flex-col items-center justify-center w-24 h-20 rounded-xl text-center"
                   style={{
                     background: isDiag ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.08)',
@@ -64,7 +68,7 @@ function ConfusionMatrix({ cm }: { cm: number[][] }) {
                 </div>
               );
             })}
-          </>
+          </div>
         ))}
       </div>
     </div>
@@ -117,7 +121,7 @@ export default function ModelPerformance() {
             </div>
           </div>
           <div className="bg-black/30 rounded-lg px-4 py-3 text-xs font-mono text-blue-300 text-left">
-            python -m backend.train_model
+            python train.py
           </div>
         </div>
       </div>
@@ -128,22 +132,36 @@ export default function ModelPerformance() {
   const vc = metrics.validation_comparison;
   const fi = metrics.feature_importances?.slice(0, 12) ?? [];
 
+  const testAcc = tm?.accuracy ?? tm?.test_accuracy ?? null;
+  const phishF1 = tm?.f1 ?? tm?.phishing_f1 ?? null;
+  const phishRec = tm?.recall ?? tm?.phishing_recall ?? null;
+  const phishPrec = tm?.precision ?? tm?.phishing_precision ?? null;
+  const legitF1 = tm?.legitimate_f1 ?? null;
+  const macroF1 = tm?.macro_f1 ?? tm?.f1 ?? null;
+  const rocAuc = tm?.roc_auc ?? null;
+  const avgPrec = tm?.average_precision ?? null;
+
   // Comparison chart data
-  const compData = Object.entries(vc).map(([name, vals]) => ({
-    name: name.replace(' ', '\n'),
-    'Phishing F1': +(vals.phishing_f1 * 100).toFixed(1),
-    'Phishing Recall': +(vals.phishing_recall * 100).toFixed(1),
-    'Accuracy': +(vals.accuracy * 100).toFixed(1),
-  }));
+  const compData = (vc && typeof vc === 'object') ? Object.entries(vc).map(([name, vals]) => {
+    const f1Val = vals?.phishing_f1 ?? vals?.f1 ?? 0;
+    const recVal = vals?.phishing_recall ?? vals?.recall ?? 0;
+    const accVal = vals?.accuracy ?? 0;
+    return {
+      name: name.replace(' ', '\n'),
+      'Phishing F1': typeof f1Val === 'number' ? +(f1Val * 100).toFixed(1) : 0,
+      'Phishing Recall': typeof recVal === 'number' ? +(recVal * 100).toFixed(1) : 0,
+      'Accuracy': typeof accVal === 'number' ? +(accVal * 100).toFixed(1) : 0,
+    };
+  }) : [];
 
   // Radar data for selected model
   const radarData = [
-    { metric: 'Accuracy',     value: +(tm.test_accuracy * 100).toFixed(1) },
-    { metric: 'Phish F1',     value: +(tm.phishing_f1 * 100).toFixed(1) },
-    { metric: 'Phish Recall', value: +(tm.phishing_recall * 100).toFixed(1) },
-    { metric: 'Phish Prec.',  value: +(tm.phishing_precision * 100).toFixed(1) },
-    { metric: 'Legit F1',     value: +(tm.legitimate_f1 * 100).toFixed(1) },
-    { metric: 'ROC-AUC',      value: tm.roc_auc ? +(tm.roc_auc * 100).toFixed(1) : 0 },
+    { metric: 'Accuracy',     value: typeof testAcc === 'number' ? +(testAcc * 100).toFixed(1) : 0 },
+    { metric: 'Phish F1',     value: typeof phishF1 === 'number' ? +(phishF1 * 100).toFixed(1) : 0 },
+    { metric: 'Phish Recall', value: typeof phishRec === 'number' ? +(phishRec * 100).toFixed(1) : 0 },
+    { metric: 'Phish Prec.',  value: typeof phishPrec === 'number' ? +(phishPrec * 100).toFixed(1) : 0 },
+    { metric: 'Legit F1',     value: typeof legitF1 === 'number' ? +(legitF1 * 100).toFixed(1) : 0 },
+    { metric: 'ROC-AUC',      value: typeof rocAuc === 'number' ? +(rocAuc * 100).toFixed(1) : 0 },
   ];
 
   return (
@@ -158,7 +176,7 @@ export default function ModelPerformance() {
             Model Performance
           </h1>
           <p className="text-slate-400 text-sm mt-1 ml-11">
-            {tm.model_name} — Evaluated on held-out test set
+            {tm?.model_name ?? 'Production Model'} — Evaluated on held-out test set
           </p>
         </div>
         <button onClick={load} className="btn-ghost">
@@ -189,14 +207,14 @@ export default function ModelPerformance() {
       <div>
         <h2 className="section-title"><TrendingUp size={18} className="text-violet-400" />Test Set Metrics</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <MetricCard label="Test Accuracy"      value={tm.test_accuracy}       color="#3b82f6" sub="Overall correct predictions" />
-          <MetricCard label="Phishing F1"        value={tm.phishing_f1}         color="#ef4444" sub="Harmonic mean prec/recall" />
-          <MetricCard label="Phishing Recall"    value={tm.phishing_recall}     color="#f97316" sub="% phishing URLs caught" />
-          <MetricCard label="Phishing Precision" value={tm.phishing_precision}  color="#f59e0b" sub="% predictions correct" />
-          <MetricCard label="Legitimate F1"      value={tm.legitimate_f1}       color="#10b981" sub="Legit URL performance" />
-          <MetricCard label="Macro F1"           value={tm.macro_f1}            color="#8b5cf6" sub="Unweighted avg F1" />
-          <MetricCard label="ROC-AUC"            value={tm.roc_auc}             color="#06b6d4" sub="Area under ROC curve" />
-          <MetricCard label="Avg Precision"      value={tm.average_precision}   color="#6366f1" sub="Precision-recall AUC" />
+          <MetricCard label="Test Accuracy"      value={testAcc}   color="#3b82f6" sub="Overall correct predictions" />
+          <MetricCard label="Phishing F1"        value={phishF1}   color="#ef4444" sub="Harmonic mean prec/recall" />
+          <MetricCard label="Phishing Recall"    value={phishRec}  color="#f97316" sub="% phishing URLs caught" />
+          <MetricCard label="Phishing Precision" value={phishPrec} color="#f59e0b" sub="% predictions correct" />
+          <MetricCard label="Legitimate F1"      value={legitF1}   color="#10b981" sub="Legit URL performance" />
+          <MetricCard label="Macro F1"           value={macroF1}   color="#8b5cf6" sub="Unweighted avg F1" />
+          <MetricCard label="ROC-AUC"            value={rocAuc}    color="#06b6d4" sub="Area under ROC curve" />
+          <MetricCard label="Avg Precision"      value={avgPrec}   color="#6366f1" sub="Precision-recall AUC" />
         </div>
       </div>
 
@@ -208,7 +226,7 @@ export default function ModelPerformance() {
             <Database size={18} className="text-blue-400" />
             Confusion Matrix
           </div>
-          {tm.confusion_matrix && <ConfusionMatrix cm={tm.confusion_matrix} />}
+          <ConfusionMatrix cm={tm?.confusion_matrix} />
         </div>
 
         {/* Radar chart */}

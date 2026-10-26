@@ -141,13 +141,20 @@ def get_history_stats() -> dict:
             """
             SELECT
                 COUNT(*) AS total,
-                SUM(CASE WHEN prediction = 'PHISHING' THEN 1 ELSE 0 END) AS phishing_count,
-                SUM(CASE WHEN prediction = 'LIKELY LEGITIMATE' THEN 1 ELSE 0 END) AS legitimate_count,
-                SUM(CASE WHEN prediction IS NULL THEN 1 ELSE 0 END) AS error_count
+                COALESCE(SUM(CASE WHEN prediction = 'PHISHING' THEN 1 ELSE 0 END), 0) AS phishing_count,
+                COALESCE(SUM(CASE WHEN prediction IN ('SAFE', 'LIKELY LEGITIMATE') THEN 1 ELSE 0 END), 0) AS legitimate_count,
+                COALESCE(SUM(CASE WHEN prediction IS NULL THEN 1 ELSE 0 END), 0) AS error_count
             FROM scan_history
             """
         ).fetchone()
-    return dict(row) if row else {}
+    if not row:
+        return {"total": 0, "phishing_count": 0, "legitimate_count": 0, "error_count": 0}
+    return {
+        "total": int(row["total"] or 0),
+        "phishing_count": int(row["phishing_count"] or 0),
+        "legitimate_count": int(row["legitimate_count"] or 0),
+        "error_count": int(row["error_count"] or 0),
+    }
 
 
 def get_total_count() -> int:

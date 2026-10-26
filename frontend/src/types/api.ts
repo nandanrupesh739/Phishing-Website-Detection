@@ -63,28 +63,37 @@ export interface HistoryResponse {
 
 export interface TestMetrics {
   model_name: string;
-  test_accuracy: number;
-  phishing_precision: number;
-  phishing_recall: number;
-  phishing_f1: number;
-  legitimate_precision: number;
-  legitimate_recall: number;
-  legitimate_f1: number;
-  macro_f1: number;
-  weighted_f1: number;
-  confusion_matrix: number[][];
+  accuracy: number;
+  precision: number;
+  recall: number;
+  f1: number;
   roc_auc: number | null;
   average_precision: number | null;
+  confusion_matrix: number[][];
+  test_accuracy?: number;
+  phishing_precision?: number;
+  phishing_recall?: number;
+  phishing_f1?: number;
+  legitimate_precision?: number;
+  legitimate_recall?: number;
+  legitimate_f1?: number;
+  macro_f1?: number;
+  weighted_f1?: number;
 }
 
 export interface ValidationEntry {
   accuracy: number;
-  phishing_precision: number;
-  phishing_recall: number;
-  phishing_f1: number;
-  macro_f1: number;
+  precision?: number;
+  recall?: number;
+  f1?: number;
+  phishing_precision?: number;
+  phishing_recall?: number;
+  phishing_f1?: number;
+  macro_f1?: number;
   roc_auc: number | null;
-  train_time_s: number;
+  train_time_s?: number;
+  fit_time_s?: number;
+  cv_time_s?: number;
 }
 
 export interface FeatureImportance {
@@ -94,8 +103,12 @@ export interface FeatureImportance {
 
 export interface ModelMetricsResponse {
   test_metrics: TestMetrics;
-  validation_comparison: Record<string, ValidationEntry>;
-  feature_importances: FeatureImportance[];
+  validation_comparison?: Record<string, ValidationEntry>;
+  cross_validation?: Record<string, any>;
+  feature_importances?: FeatureImportance[];
+  dataset_source?: string;
+  dataset_size?: number;
+  label_distribution?: Record<string, number>;
 }
 
 // ── Model Info ────────────────────────────────────────────────────────────

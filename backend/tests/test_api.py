@@ -46,7 +46,7 @@ def app(mock_model, tmp_path):
         "dataset_size": 1000,
         "label_distribution": {"0": 500, "1": 500},
         "trained_at": "2025-01-01T00:00:00+00:00",
-        "class_mapping": {"0": "Phishing", "1": "Legitimate"},
+        "class_mapping": {"0": "SAFE", "1": "PHISHING"},
     }
     pred_module._metrics = {
         "test_metrics": {"test_accuracy": 0.95},
@@ -137,6 +137,26 @@ class TestPredictEndpoint:
         )
         assert resp.status_code == 400
 
+    def test_non_dict_json_body_returns_400(self, app):
+        # JSON arrays, numbers, strings must return 400, not 500
+        for bad_body in ["[1, 2, 3]", '"just-a-string"', "123", "true"]:
+            resp = app.post(
+                "/api/predict",
+                data=bad_body,
+                content_type="application/json",
+            )
+            assert resp.status_code == 400, f"Expected 400 for {bad_body}, got {resp.status_code}"
+
+    def test_invalid_port_returns_400(self, app):
+        for bad_url in ["http://example.com:abc/login", "http://example.com:99999/login"]:
+            resp = app.post(
+                "/api/predict",
+                data=json.dumps({"url": bad_url}),
+                content_type="application/json",
+            )
+            assert resp.status_code == 400
+            assert "port" in resp_json(resp).get("error", "").lower()
+
     def test_javascript_scheme_rejected(self, app):
         resp = app.post(
             "/api/predict",
@@ -181,6 +201,22 @@ class TestHistoryEndpoint:
     def test_invalid_limit_returns_400(self, app):
         resp = app.get("/api/history?limit=notanumber")
         assert resp.status_code == 400
+
+    def test_history_stats_counts_safe_and_likely_legitimate(self, app):
+        from backend.database import insert_scan, clear_history
+        clear_history()
+
+        insert_scan("http://safe1.com", "SAFE", "LOW", 0.1, "model_probability", "1.0.0")
+        insert_scan("http://safe2.com", "LIKELY LEGITIMATE", "LOW", 0.15, "model_probability", "1.0.0")
+        insert_scan("http://phish1.com", "PHISHING", "CRITICAL", 0.99, "model_probability", "1.0.0")
+        insert_scan("http://err1.com", None, None, None, "unavailable", "1.0.0")
+
+        data = resp_json(app.get("/api/history"))
+        stats = data["stats"]
+        assert stats["total"] == 4
+        assert stats["legitimate_count"] == 2  # counts both SAFE and LIKELY LEGITIMATE
+        assert stats["phishing_count"] == 1
+        assert stats["error_count"] == 1
 
 
 # ---------------------------------------------------------------------------

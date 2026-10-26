@@ -111,7 +111,10 @@ def predict():
     if not request.is_json:
         return _error("Request body must be JSON.", 400)
 
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _error("Request body must be a JSON object.", 400)
+
     url = data.get("url", "")
 
     if not url or not isinstance(url, str):
@@ -218,7 +221,7 @@ def model_metrics():
     """Return saved evaluation metrics from the most recent training run."""
     if not model_is_available():
         return _error(
-            "No trained model found. Run 'python -m backend.train_model' first.", 503
+            "No trained model found. Run 'python train.py' first.", 503
         )
     try:
         metrics = get_saved_metrics()

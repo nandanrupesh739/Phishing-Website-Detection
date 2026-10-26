@@ -96,7 +96,7 @@ export default function Dashboard({ onNavigate }: Props) {
           <div className="flex-1">
             <div className="text-white font-semibold text-sm">Model not trained yet</div>
             <div className="text-amber-200/60 text-xs mt-0.5">
-              Run <code className="font-mono bg-black/30 px-1 py-0.5 rounded">python -m backend.train_model</code> to train the detection model
+              Run <code className="font-mono bg-black/30 px-1 py-0.5 rounded">python train.py</code> to train the detection model
             </div>
           </div>
         </div>
@@ -133,7 +133,16 @@ export default function Dashboard({ onNavigate }: Props) {
             <StatCard icon={<Activity size={20} />} label="Total Scans" value={stats?.total ?? 0} color="#3b82f6" />
             <StatCard icon={<AlertTriangle size={20} />} label="Phishing Found" value={stats?.phishing_count ?? 0} color="#ef4444" sub="High/Critical risk" />
             <StatCard icon={<CheckCircle size={20} />} label="Likely Legit" value={stats?.legitimate_count ?? 0} color="#10b981" sub="Low risk" />
-            <StatCard icon={<TrendingUp size={20} />} label="Model Accuracy" value={tm ? `${(tm.test_accuracy * 100).toFixed(1)}%` : '—'} color="#8b5cf6" sub={tm ? 'Test set' : 'Train first'} />
+            <StatCard
+              icon={<TrendingUp size={20} />}
+              label="Model Accuracy"
+              value={(() => {
+                const acc = tm?.accuracy ?? tm?.test_accuracy;
+                return typeof acc === 'number' && !isNaN(acc) ? `${(acc * 100).toFixed(1)}%` : '—';
+              })()}
+              color="#8b5cf6"
+              sub={tm ? 'Test set' : 'Train first'}
+            />
           </div>
         )}
       </div>
@@ -187,22 +196,28 @@ export default function Dashboard({ onNavigate }: Props) {
           {tm ? (
             <div className="p-5 space-y-3">
               {([
-                ['Test Accuracy',      tm.test_accuracy,       '#3b82f6'],
-                ['Phishing Recall',    tm.phishing_recall,     '#ef4444'],
-                ['Phishing Precision', tm.phishing_precision,  '#f97316'],
-                ['Macro F1-Score',     tm.macro_f1,            '#8b5cf6'],
-              ] as [string, number, string][]).map(([label, val, color]) => (
-                <div key={label}>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-slate-400">{label}</span>
-                    <span className="font-mono font-semibold" style={{ color }}>{(val * 100).toFixed(1)}%</span>
+                ['Test Accuracy',      tm.accuracy ?? tm.test_accuracy,       '#3b82f6'],
+                ['Phishing Recall',    tm.recall ?? tm.phishing_recall,     '#ef4444'],
+                ['Phishing Precision', tm.precision ?? tm.phishing_precision,  '#f97316'],
+                ['Macro F1-Score',     tm.macro_f1 ?? tm.f1 ?? tm.phishing_f1, '#8b5cf6'],
+              ] as [string, number | undefined, string][]).map(([label, val, color]) => {
+                const isValid = typeof val === 'number' && !isNaN(val);
+                const pct = isValid ? `${(val * 100).toFixed(1)}%` : '—';
+                return (
+                  <div key={label}>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-slate-400">{label}</span>
+                      <span className="font-mono font-semibold" style={{ color }}>{pct}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-slate-800">
+                      {isValid && (
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{ width: `${Math.min(Math.max(val * 100, 0), 100)}%`, background: color }} />
+                      )}
+                    </div>
                   </div>
-                  <div className="h-1.5 rounded-full bg-slate-800">
-                    <div className="h-full rounded-full transition-all duration-700"
-                      style={{ width: `${val * 100}%`, background: color }} />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center p-10 gap-3 text-center">

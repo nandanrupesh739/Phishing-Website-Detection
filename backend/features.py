@@ -112,10 +112,17 @@ def _normalise_url(url: str) -> str:
 
 
 def _safe_parse(url: str) -> urllib.parse.ParseResult | None:
-    """Parse a URL, returning None on failure."""
+    """Parse a URL, returning None on failure or if port is invalid."""
     try:
         result = urllib.parse.urlparse(_normalise_url(url))
-        return result if result.netloc else None
+        if not result.netloc:
+            return None
+        # Safely verify port access doesn't crash on invalid integers/out-of-range
+        try:
+            _ = result.port
+        except (ValueError, OverflowError):
+            return None
+        return result
     except Exception:
         return None
 
@@ -227,7 +234,11 @@ def extract_url_features(url: str) -> Dict[str, float]:
 
     # ── Feature 13: Non-default port ──────────────────────────────────────
     default_ports = {"http": 80, "https": 443, "ftp": 21}
-    port = parsed.port
+    try:
+        port = parsed.port
+    except (ValueError, OverflowError):
+        port = None
+
     if port is not None:
         feats["has_non_default_port"] = float(
             port != default_ports.get(scheme, -1)

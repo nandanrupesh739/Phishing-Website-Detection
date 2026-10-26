@@ -191,6 +191,14 @@ def validate_url(url: str) -> tuple[bool, str]:
     if hostname.startswith(".") or hostname.endswith("."):
         return False, "Hostname starts or ends with a dot."
 
+    # Reject invalid port numbers (e.g. host:abc or host:99999)
+    try:
+        port = parsed.port
+        if port is not None and not (1 <= port <= 65535):
+            return False, "URL contains an invalid port number (must be between 1 and 65535)."
+    except (ValueError, OverflowError):
+        return False, "URL contains an invalid port number."
+
     return True, ""
 
 

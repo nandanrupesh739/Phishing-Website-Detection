@@ -212,6 +212,14 @@ class TestPort:
     def test_no_port_not_flagged(self):
         assert feats("https://example.com/path")["has_non_default_port"] == 0.0
 
+    def test_invalid_string_port_does_not_crash(self):
+        f = feats("http://example.com:abc/path")
+        assert f["has_non_default_port"] == 0.0
+
+    def test_invalid_out_of_range_port_does_not_crash(self):
+        f = feats("http://example.com:99999/path")
+        assert f["has_non_default_port"] == 0.0
+
 
 # ---------------------------------------------------------------------------
 # 12. Punycode / IDN
