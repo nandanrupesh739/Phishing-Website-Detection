@@ -20,8 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 def mock_model():
     """Create a mock sklearn pipeline."""
     pipe = MagicMock()
-    pipe.predict.return_value = np.array([0])
-    pipe.predict_proba.return_value = np.array([[0.82, 0.18]])
+    pipe.predict.return_value = np.array([1])
+    pipe.predict_proba.return_value = np.array([[0.18, 0.82]])
     return pipe
 
 

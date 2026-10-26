@@ -632,56 +632,9 @@ def save_artefacts(
 # ──────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    log.info("=" * 60)
-    log.info("PhishGuard AI — Training Pipeline")
-    log.info("=" * 60)
-
-    # 1. Load
-    df_raw = load_dataset(DATA_PATH)
-
-    # 2. Identify columns
-    url_col, label_col = identify_columns(df_raw)
-
-    # 3. Clean
-    df = clean_dataset(df_raw, url_col, label_col)
-    dataset_size = len(df)
-    label_dist = df["label"].value_counts().to_dict()
-    label_dist = {str(k): int(v) for k, v in label_dist.items()}
-
-    # 4. Feature extraction
-    X, y = extract_features(df)
-
-    # 5. Split
-    X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y)
-
-    # 6. Train pipelines
-    pipelines = build_pipelines()
-    best_name, best_pipe, comparison = train_and_compare(
-        pipelines, X_train, y_train, X_val, y_val
-    )
-
-    # 7. Evaluate on test set (once, only the best model)
-    metrics = evaluate_on_test(best_pipe, X_test, y_test, best_name)
-
-    # 8. Feature importances
-    importances = extract_feature_importance(best_pipe, best_name)
-
-    # 9. Plots
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    plot_confusion_matrix(metrics["confusion_matrix"], REPORTS_DIR)
-    plot_precision_recall(best_pipe, X_test, y_test, REPORTS_DIR)
-    plot_feature_importance(importances, REPORTS_DIR)
-    plot_model_comparison(comparison, REPORTS_DIR)
-
-    # 10. Save
-    save_artefacts(
-        best_pipe, metrics, comparison, importances,
-        dataset_size, label_dist, best_name,
-    )
-
-    log.info("=" * 60)
-    log.info("Training complete.  Model saved to: %s", MODEL_PATH)
-    log.info("=" * 60)
+    """Forward entrypoint to primary training pipeline in train.py."""
+    import train
+    train.main()
 
 
 if __name__ == "__main__":

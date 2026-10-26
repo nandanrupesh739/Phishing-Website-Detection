@@ -17,7 +17,7 @@ from typing import Any
 import joblib
 import numpy as np
 
-from backend.config import METADATA_PATH, METRICS_PATH, MODEL_PATH
+from backend.config import METADATA_PATH, METRICS_PATH, MODEL_PATH, MODELS_DIR
 from backend.features import (
     FEATURE_NAMES,
     extract_url_features,
@@ -27,10 +27,15 @@ from backend.features import (
 
 log = logging.getLogger(__name__)
 
+MODEL_PKL_PATH = MODELS_DIR / "model.pkl"
+
 # ──────────────────────────────────────────────────────────────────────────
 # Module-level singletons (loaded once, reused per request)
 # ──────────────────────────────────────────────────────────────────────────
 _model = None
+_scaler = None
+_vectorizer = None
+_bundle: dict | None = None
 _metadata: dict | None = None
 _metrics: dict | None = None
 
@@ -55,29 +60,42 @@ class PredictionError(RuntimeError):
 
 def load_model(force_reload: bool = False) -> Any:
     """
-    Load (or reload) the trained sklearn pipeline from disk.
-    Returns the pipeline object.  Raises ModelNotFoundError if absent.
+    Load (or reload) the trained model/bundle from disk.
+    Checks models/model.pkl first, falling back to phishguard_model.joblib.
+    Returns the model or pipeline object. Raises ModelNotFoundError if absent.
     """
-    global _model, _metadata, _metrics
+    global _model, _scaler, _vectorizer, _bundle, _metadata, _metrics
 
     if _model is not None and not force_reload:
         return _model
 
-    if not MODEL_PATH.exists():
+    target_path = MODEL_PKL_PATH if MODEL_PKL_PATH.exists() else MODEL_PATH
+    if not target_path.exists():
         raise ModelNotFoundError(
-            f"Model file not found at '{MODEL_PATH}'. "
-            "Please run 'python -m backend.train_model' first."
+            f"Model file not found at '{MODEL_PKL_PATH}' or '{MODEL_PATH}'. "
+            "Please run 'python train.py' first."
         )
 
-    log.info("Loading model from %s …", MODEL_PATH)
-    _model = joblib.load(MODEL_PATH)
+    log.info("Loading model from %s …", target_path)
+    loaded = joblib.load(target_path)
+
+    if isinstance(loaded, dict) and "model" in loaded:
+        _bundle = loaded
+        _model = loaded["model"]
+        _scaler = loaded.get("scaler")
+        _vectorizer = loaded.get("vectorizer")
+    else:
+        _bundle = None
+        _model = loaded
+        _scaler = getattr(loaded, "named_steps", {}).get("scaler") if hasattr(loaded, "named_steps") else None
+        _vectorizer = getattr(loaded, "named_steps", {}).get("tfidf") if hasattr(loaded, "named_steps") else None
 
     if METADATA_PATH.exists():
-        with open(METADATA_PATH) as f:
+        with open(METADATA_PATH, encoding="utf-8") as f:
             _metadata = json.load(f)
         # Validate feature alignment
         saved_features = _metadata.get("feature_names", [])
-        if saved_features and saved_features != FEATURE_NAMES:
+        if saved_features and saved_features != FEATURE_NAMES and _vectorizer is None:
             log.warning(
                 "Feature name mismatch between model metadata and current "
                 "features.py. Re-training is recommended. "
@@ -86,7 +104,7 @@ def load_model(force_reload: bool = False) -> Any:
             )
 
     if METRICS_PATH.exists():
-        with open(METRICS_PATH) as f:
+        with open(METRICS_PATH, encoding="utf-8") as f:
             _metrics = json.load(f)
 
     log.info("Model loaded: %s", _metadata.get("model_name") if _metadata else "unknown")
@@ -180,25 +198,21 @@ def validate_url(url: str) -> tuple[bool, str]:
 # Risk scoring
 # ──────────────────────────────────────────────────────────────────────────
 
-def _map_risk_level(score: float, prediction_label: int) -> str:
+def _map_risk_level(score: float, prediction_label: int | str) -> str:
     """
     Derive a qualitative risk level from model probability and prediction.
+    Prediction label: 1 / 'PHISHING' = threat, 0 / 'SAFE' = safe.
     Thresholds chosen conservatively (prefer catching phishing).
     """
-    if prediction_label == 0:          # model says phishing
+    if prediction_label in (1, "PHISHING", "phishing"):
         if score >= 0.80:
             return "CRITICAL"
         elif score >= 0.60:
             return "HIGH"
         else:
             return "MEDIUM"
-    else:                               # model says legitimate
-        if score <= 0.30:
-            return "LOW"
-        elif score <= 0.50:
-            return "LOW"
-        else:
-            return "LOW"
+    else:  # SAFE
+        return "LOW"
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -207,10 +221,11 @@ def _map_risk_level(score: float, prediction_label: int) -> str:
 
 def predict_url(url: str) -> dict:
     """
-    Validate → extract features → classify URL.
+    Validate → extract features → classify URL as 'SAFE' or 'PHISHING'.
 
     Returns a dict with fields:
-      url, prediction, risk_level, score, score_type,
+      url, prediction ("SAFE" or "PHISHING"), confidence (float percentage),
+      confidence_str (e.g. "98.5%"), risk_level, score, score_type,
       indicators, features, disclaimer, error (on failure)
     """
     # ── 1. Validate ─────────────────────────────────────────────────────
@@ -224,7 +239,7 @@ def predict_url(url: str) -> dict:
 
     # ── 2. Load model ───────────────────────────────────────────────────
     try:
-        pipe = load_model()
+        load_model()
     except ModelNotFoundError as exc:
         return {
             "url": url,
@@ -232,47 +247,63 @@ def predict_url(url: str) -> dict:
             "prediction": None,
         }
 
-    # ── 3. Feature extraction ────────────────────────────────────────────
+    # ── 3. Feature extraction & input prep ──────────────────────────────
     feat_dict = extract_url_features(url)
-    feature_vector = np.array(features_to_vector(feat_dict)).reshape(1, -1)
+    if _vectorizer is not None:
+        X_input = _vectorizer.transform([url])
+    else:
+        raw_vec = np.array(features_to_vector(feat_dict), dtype=np.float32).reshape(1, -1)
+        if _scaler is not None:
+            X_input = _scaler.transform(raw_vec)
+        else:
+            X_input = raw_vec
 
     # ── 4. Prediction ────────────────────────────────────────────────────
     try:
-        pred_label = int(pipe.predict(feature_vector)[0])
+        pred_label = int(_model.predict(X_input)[0])
     except Exception as exc:
         log.error("Prediction failed: %s", exc)
         raise PredictionError(f"Model prediction failed: {exc}") from exc
 
-    prediction_str = "PHISHING" if pred_label == 0 else "LIKELY LEGITIMATE"
+    # Target: 1 = PHISHING, 0 = SAFE
+    prediction_str = "PHISHING" if pred_label == 1 else "SAFE"
 
-    # ── 5. Score / probability ───────────────────────────────────────────
+    # ── 5. Score / probability & confidence percentage ───────────────────
     score: float | None = None
+    confidence_pct: float | None = None
     score_type: str = "unavailable"
 
     try:
-        probas = pipe.predict_proba(feature_vector)[0]
-        # probas[0] = P(phishing), probas[1] = P(legitimate)
-        if pred_label == 0:
-            score = float(probas[0])        # confidence in phishing
+        probas = _model.predict_proba(X_input)[0]
+        # probas[0] = P(SAFE), probas[1] = P(PHISHING)
+        prob_safe = float(probas[0])
+        prob_phish = float(probas[1])
+        if pred_label == 1:
+            score = prob_phish
+            confidence_pct = prob_phish * 100.0
         else:
-            score = float(probas[1])        # confidence in legitimate
+            score = prob_safe
+            confidence_pct = prob_safe * 100.0
         score_type = "model_probability"
     except Exception:
-        # Some models (e.g. SVM without probability=True) don't have predict_proba
         score = None
+        confidence_pct = None
         score_type = "unavailable"
 
     # ── 6. Risk level ────────────────────────────────────────────────────
-    effective_score = score if score is not None else (0.7 if pred_label == 0 else 0.3)
+    effective_score = score if score is not None else (0.8 if pred_label == 1 else 0.2)
     risk_level = _map_risk_level(effective_score, pred_label)
 
     # ── 7. Indicators ────────────────────────────────────────────────────
     indicators = get_risk_indicators(feat_dict)
 
     # ── 8. Return structured result ──────────────────────────────────────
+    confidence_str = f"{confidence_pct:.1f}%" if confidence_pct is not None else "N/A"
     return {
         "url": url,
         "prediction": prediction_str,
+        "confidence": round(confidence_pct, 2) if confidence_pct is not None else None,
+        "confidence_str": confidence_str,
         "risk_level": risk_level,
         "score": round(score, 4) if score is not None else None,
         "score_type": score_type,

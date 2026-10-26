@@ -94,18 +94,18 @@ class TestValidateUrl:
 
 class TestRiskLevelMapping:
     def test_high_confidence_phishing(self):
-        assert _map_risk_level(0.95, 0) == "CRITICAL"
+        assert _map_risk_level(0.95, 1) == "CRITICAL"
 
     def test_medium_confidence_phishing(self):
-        assert _map_risk_level(0.65, 0) == "HIGH"
+        assert _map_risk_level(0.65, 1) == "HIGH"
 
     def test_low_confidence_phishing(self):
-        assert _map_risk_level(0.45, 0) == "MEDIUM"
+        assert _map_risk_level(0.45, 1) == "MEDIUM"
 
     def test_legitimate_always_low(self):
-        assert _map_risk_level(0.9, 1) == "LOW"
-        assert _map_risk_level(0.5, 1) == "LOW"
-        assert _map_risk_level(0.1, 1) == "LOW"
+        assert _map_risk_level(0.9, 0) == "LOW"
+        assert _map_risk_level(0.5, 0) == "LOW"
+        assert _map_risk_level(0.1, 0) == "LOW"
 
 
 # ---------------------------------------------------------------------------
@@ -114,15 +114,16 @@ class TestRiskLevelMapping:
 
 class TestModelNotFound:
     def test_load_model_raises_when_absent(self):
-        """Patching MODEL_PATH to a non-existent file should raise ModelNotFoundError."""
-        from backend import predictor
+        """Patching model paths to non-existent files should raise ModelNotFoundError."""
         import backend.predictor as pred_module
 
         # Reset cached model
         pred_module._model = None
 
-        fake_path = Path("/nonexistent/path/model.joblib")
-        with patch.object(pred_module, "MODEL_PATH", fake_path):
+        fake_path = Path("/nonexistent/path/model.pkl")
+        fake_joblib = Path("/nonexistent/path/model.joblib")
+        with patch.object(pred_module, "MODEL_PKL_PATH", fake_path), \
+             patch.object(pred_module, "MODEL_PATH", fake_joblib):
             with pytest.raises(ModelNotFoundError):
                 pred_module.load_model(force_reload=True)
 
@@ -139,10 +140,12 @@ class TestPredictUrlWithMockedModel:
         import backend.predictor as pred_module
 
         mock_pipe = MagicMock()
-        mock_pipe.predict.return_value = np.array([0])           # phishing
-        mock_pipe.predict_proba.return_value = np.array([[0.87, 0.13]])
+        mock_pipe.predict.return_value = np.array([1])           # phishing = 1
+        mock_pipe.predict_proba.return_value = np.array([[0.13, 0.87]])  # P(SAFE)=0.13, P(PHISH)=0.87
 
         pred_module._model = mock_pipe
+        pred_module._scaler = None
+        pred_module._vectorizer = None
         pred_module._metadata = {
             "model_name": "TestModel",
             "model_version": "0.0.1",
@@ -151,6 +154,8 @@ class TestPredictUrlWithMockedModel:
         yield mock_pipe
         # Reset after test
         pred_module._model = None
+        pred_module._scaler = None
+        pred_module._vectorizer = None
         pred_module._metadata = None
 
     def test_phishing_prediction_structure(self):
@@ -159,6 +164,7 @@ class TestPredictUrlWithMockedModel:
 
         assert "url" in result
         assert "prediction" in result
+        assert "confidence" in result
         assert "risk_level" in result
         assert "score" in result
         assert "score_type" in result
@@ -200,10 +206,10 @@ class TestPredictUrlWithMockedModel:
 
     def test_legitimate_prediction(self):
         import backend.predictor as pred_module
-        pred_module._model.predict.return_value = np.array([1])
-        pred_module._model.predict_proba.return_value = np.array([[0.05, 0.95]])
+        pred_module._model.predict.return_value = np.array([0])  # safe = 0
+        pred_module._model.predict_proba.return_value = np.array([[0.95, 0.05]])
 
         from backend.predictor import predict_url
         result = predict_url("https://www.google.com/search?q=test")
-        assert result["prediction"] == "LIKELY LEGITIMATE"
+        assert result["prediction"] == "SAFE"
         assert result["risk_level"] == "LOW"

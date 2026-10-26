@@ -11,7 +11,7 @@ export interface PredictionRequest {
 
 export interface PredictionResult {
   url: string;
-  prediction: "PHISHING" | "LIKELY LEGITIMATE" | null;
+  prediction: "PHISHING" | "LIKELY LEGITIMATE" | "SAFE" | null;
   risk_level: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | null;
   score: number | null;
   score_type: "model_probability" | "model_score" | "unavailable";

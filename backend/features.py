@@ -182,9 +182,9 @@ def extract_url_features(url: str) -> Dict[str, float]:
     feats["num_special_chars"] = float(len(special))
 
     # ── Feature 17: Repeated separators ───────────────────────────────────
-    feats["has_repeated_separators"] = float(
-        bool(_RE_DOUBLE_SEP.search(raw_url))
-    )
+    # Strip protocol '://' so standard URLs are not falsely flagged
+    url_body = _RE_DOUBLE_SEP.search(re.sub(r"^[a-zA-Z0-9+-.]+://", "", raw_url))
+    feats["has_repeated_separators"] = float(bool(url_body))
 
     # ── Feature 24: Unusual encoding ──────────────────────────────────────
     unusual_count = len(_RE_UNUSUAL_ENC.findall(raw_url))

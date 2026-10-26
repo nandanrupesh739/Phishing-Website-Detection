@@ -295,7 +295,7 @@ export default function Scanner() {
             </div>
           )}
 
-          {result.indicators.length === 0 && result.prediction === 'LIKELY LEGITIMATE' && (
+          {result.indicators.length === 0 && (result.prediction === 'LIKELY LEGITIMATE' || result.prediction === 'SAFE') && (
             <div className="glass-card p-5 flex items-center gap-3"
               style={{ border: '1px solid rgba(16,185,129,0.2)', background: 'rgba(16,185,129,0.04)' }}>
               <CheckCircle size={20} className="text-emerald-400 shrink-0" />
