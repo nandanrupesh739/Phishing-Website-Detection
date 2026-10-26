@@ -20,9 +20,11 @@ import numpy as np
 from backend.config import METADATA_PATH, METRICS_PATH, MODEL_PATH, MODELS_DIR
 from backend.features import (
     FEATURE_NAMES,
+    canonical_url_string,
     extract_url_features,
     features_to_vector,
     get_risk_indicators,
+    normalise_url,
 )
 
 log = logging.getLogger(__name__)
@@ -257,14 +259,20 @@ def predict_url(url: str) -> dict:
 
     # ── 3. Feature extraction & input prep ──────────────────────────────
     feat_dict = extract_url_features(url)
-    if _vectorizer is not None:
-        X_input = _vectorizer.transform([url])
+    norm_url = canonical_url_string(url)
+    raw_vec = np.array(features_to_vector(feat_dict), dtype=np.float32).reshape(1, -1)
+
+    if _scaler is not None and _vectorizer is not None:
+        import scipy.sparse
+        X_tab = _scaler.transform(raw_vec)
+        X_tfidf = _vectorizer.transform([norm_url])
+        X_input = scipy.sparse.hstack([X_tab, X_tfidf])
+    elif _vectorizer is not None:
+        X_input = _vectorizer.transform([norm_url])
+    elif _scaler is not None:
+        X_input = _scaler.transform(raw_vec)
     else:
-        raw_vec = np.array(features_to_vector(feat_dict), dtype=np.float32).reshape(1, -1)
-        if _scaler is not None:
-            X_input = _scaler.transform(raw_vec)
-        else:
-            X_input = raw_vec
+        X_input = raw_vec
 
     # ── 4. Prediction ────────────────────────────────────────────────────
     try:

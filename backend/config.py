@@ -66,14 +66,14 @@ VAL_SIZE   = 0.15
 TEST_SIZE  = 0.15
 
 # ──────────────────────────────────────────────
-# Feature extraction
+# Feature extraction constants
 # ──────────────────────────────────────────────
-# Configurable list of known URL-shortening service hostnames
+# Configurable list of known URL-shortening service hostnames (all lowercase)
 URL_SHORTENERS = {
     "bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "buff.ly",
     "adf.ly", "is.gd", "cli.gs", "yfrog.com", "migre.me", "ff.im",
     "tiny.cc", "url4.eu", "twit.ac", "su.pr", "twurl.nl", "snipurl.com",
-    "short.to", "BudURL.com", "ping.fm", "post.ly", "Just.as", "bkite.com",
+    "short.to", "budurl.com", "ping.fm", "post.ly", "just.as", "bkite.com",
     "snipr.com", "fic.kr", "loopt.us", "doiop.com", "twitthis.com",
     "kl.am", "wp.me", "rubyurl.com", "om.ly", "to.ly", "bit.do",
     "lnkd.in", "db.tt", "qr.ae", "x.co", "prettylinkpro.com", "dlvr.it",
@@ -82,14 +82,31 @@ URL_SHORTENERS = {
     "rb.gy", "cutt.ly", "shorturl.at", "clck.ru", "u.to",
 }
 
-# Suspicious terms that commonly appear in phishing URLs
+# Suspicious terms that commonly appear in phishing URLs (excluding brand names)
 SUSPICIOUS_TERMS = {
     "login", "verify", "update", "secure", "account", "password",
     "confirm", "banking", "signin", "sign-in", "webscr", "redirect",
     "validation", "wallet", "credential", "suspended", "unusual",
-    "activity", "alert", "notification", "paypal", "amazon",
-    "apple", "microsoft", "google", "facebook", "netflix",
-    "support", "helpdesk", "recover", "unlock", "authorize",
+    "activity", "alert", "notification", "support", "helpdesk",
+    "recover", "unlock", "authorize", "authenticate", "billing", "security",
+}
+
+# Known brand names monitored for brand impersonation outside registered domain
+KNOWN_BRANDS = {
+    "paypal", "amazon", "apple", "microsoft", "google", "facebook",
+    "netflix", "chase", "wellsfargo", "bankofamerica", "citibank",
+    "ebay", "instagram", "whatsapp", "twitter", "linkedin", "dropbox",
+    "yahoo", "outlook", "icloud", "binance", "coinbase", "steam",
+    "walmart", "irs", "usps", "dhl", "fedex",
+}
+
+# TLDs disproportionately associated with phishing and malicious registrations
+SUSPICIOUS_TLDS = {
+    "xyz", "top", "gq", "tk", "ml", "cf", "ga", "buzz", "club",
+    "work", "shop", "icu", "vip", "fit", "live", "link", "guru",
+    "surf", "casa", "loan", "men", "country", "stream", "download",
+    "racing", "win", "bid", "party", "date", "faith", "review",
+    "trade", "cricket", "accountant", "science",
 }
 
 # Hostname length threshold for "unusually long hostname"

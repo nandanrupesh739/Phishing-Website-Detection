@@ -10,6 +10,7 @@ xgboost>=2.0.0
 lightgbm>=4.0.0
 tqdm>=4.66.0
 ucimlrepo>=0.0.7
+tldextract>=5.1.0
 
 # ── Visualisation (offline — headless) ───────────────────────────────────
 matplotlib>=3.8.0
