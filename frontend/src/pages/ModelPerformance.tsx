@@ -8,17 +8,19 @@ import {
 import { fetchModelMetrics, fetchModelInfo } from '../services/api';
 import type { ModelMetricsResponse, ModelInfoResponse } from '../types/api';
 
-function MetricCard({ label, value, color = '#3b82f6', sub }: {
-  label: string; value: number | null | undefined; color?: string; sub?: string;
+function MetricCard({ label, value, color = '#3b82f6', sub, isPercent = true }: {
+  label: string; value: number | null | undefined; color?: string; sub?: string; isPercent?: boolean;
 }) {
   const isValid = typeof value === 'number' && !isNaN(value);
-  const pct = isValid ? `${(value * 100).toFixed(1)}%` : '—';
+  const displayVal = isValid
+    ? (isPercent ? `${(value * 100).toFixed(1)}%` : value.toFixed(4))
+    : '—';
   return (
     <div className="glass-card p-4 space-y-2">
       <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</div>
-      <div className="text-3xl font-bold" style={{ color }}>{pct}</div>
+      <div className="text-3xl font-bold" style={{ color }}>{displayVal}</div>
       {sub && <div className="text-xs text-slate-500">{sub}</div>}
-      {isValid && (
+      {isValid && isPercent && (
         <div className="h-1.5 rounded-full bg-slate-800">
           <div className="h-full rounded-full" style={{ width: `${Math.min(Math.max(value * 100, 0), 100)}%`, background: color }} />
         </div>
@@ -31,7 +33,7 @@ function ConfusionMatrix({ cm }: { cm?: number[][] | null }) {
   if (!cm || !Array.isArray(cm) || cm.length < 2 || !Array.isArray(cm[0])) {
     return <div className="text-slate-500 text-sm py-4">Confusion matrix unavailable</div>;
   }
-  const labels = ['Phishing', 'Legitimate'];
+  const labels = ['Safe', 'Phishing'];
   const total = cm.flat().reduce((a, b) => a + b, 0);
 
   return (
@@ -140,6 +142,9 @@ export default function ModelPerformance() {
   const macroF1 = tm?.macro_f1 ?? tm?.f1 ?? null;
   const rocAuc = tm?.roc_auc ?? null;
   const avgPrec = tm?.average_precision ?? null;
+  const brierScore = tm?.brier_score ?? null;
+  const fpr = tm?.false_positive_rate ?? null;
+  const decisionThresh = metrics.decision_threshold ?? tm?.decision_threshold ?? null;
 
   // Comparison chart data
   const compData = (vc && typeof vc === 'object') ? Object.entries(vc).map(([name, vals]) => {
@@ -211,10 +216,12 @@ export default function ModelPerformance() {
           <MetricCard label="Phishing F1"        value={phishF1}   color="#ef4444" sub="Harmonic mean prec/recall" />
           <MetricCard label="Phishing Recall"    value={phishRec}  color="#f97316" sub="% phishing URLs caught" />
           <MetricCard label="Phishing Precision" value={phishPrec} color="#f59e0b" sub="% predictions correct" />
-          <MetricCard label="Legitimate F1"      value={legitF1}   color="#10b981" sub="Legit URL performance" />
-          <MetricCard label="Macro F1"           value={macroF1}   color="#8b5cf6" sub="Unweighted avg F1" />
           <MetricCard label="ROC-AUC"            value={rocAuc}    color="#06b6d4" sub="Area under ROC curve" />
           <MetricCard label="Avg Precision"      value={avgPrec}   color="#6366f1" sub="Precision-recall AUC" />
+          <MetricCard label="Brier Score"        value={brierScore} color="#10b981" sub="Calibration (lower is better)" isPercent={false} />
+          <MetricCard label="False Pos. Rate"    value={fpr}       color="#38bdf8" sub="Legit flagged as phish" />
+          <MetricCard label="Decision Threshold" value={decisionThresh} color="#a855f7" sub="Tuned on validation set" isPercent={false} />
+          <MetricCard label="Macro F1"           value={macroF1}   color="#8b5cf6" sub="Unweighted avg F1" />
         </div>
       </div>
 

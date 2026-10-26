@@ -132,7 +132,7 @@ export default function Dashboard({ onNavigate }: Props) {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard icon={<Activity size={20} />} label="Total Scans" value={stats?.total ?? 0} color="#3b82f6" />
             <StatCard icon={<AlertTriangle size={20} />} label="Phishing Found" value={stats?.phishing_count ?? 0} color="#ef4444" sub="High/Critical risk" />
-            <StatCard icon={<CheckCircle size={20} />} label="Likely Legit" value={stats?.legitimate_count ?? 0} color="#10b981" sub="Low risk" />
+            <StatCard icon={<CheckCircle size={20} />} label="Safe Found" value={stats?.legitimate_count ?? 0} color="#10b981" sub="Low risk (Safe)" />
             <StatCard
               icon={<TrendingUp size={20} />}
               label="Model Accuracy"

@@ -1,0 +1,211 @@
+{
+  "summary": {
+    "test_set_size": 32928,
+    "total_false_positives": 0,
+    "total_false_negatives": 166,
+    "decision_threshold": 0.8749999999999999
+  },
+  "top_25_false_positives": [],
+  "top_25_false_negatives": [
+    {
+      "url": "https://www.cfg.me",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.84,
+      "score": 0.9984,
+      "indicators": []
+    },
+    {
+      "url": "https://www.flslms.uo.edu.pk",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.83,
+      "score": 0.9983,
+      "indicators": []
+    },
+    {
+      "url": "https://www.andrewanddarrens.com",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.82,
+      "score": 0.9982,
+      "indicators": []
+    },
+    {
+      "url": "https://www.gtn.cl",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.81,
+      "score": 0.9981,
+      "indicators": []
+    },
+    {
+      "url": "https://www.peb.co.il",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.78,
+      "score": 0.9978,
+      "indicators": []
+    },
+    {
+      "url": "https://xiaolongleather.com",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.75,
+      "score": 0.9975,
+      "indicators": []
+    },
+    {
+      "url": "https://www.eventsreg.in",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.7,
+      "score": 0.997,
+      "indicators": []
+    },
+    {
+      "url": "https://www.birfa.tech",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.69,
+      "score": 0.9969,
+      "indicators": []
+    },
+    {
+      "url": "https://thaibio.com",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.64,
+      "score": 0.9964,
+      "indicators": []
+    },
+    {
+      "url": "https://aiiegro.pl",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.62,
+      "score": 0.9962,
+      "indicators": []
+    },
+    {
+      "url": "https://www.radiantcs.com.pk",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.6,
+      "score": 0.996,
+      "indicators": []
+    },
+    {
+      "url": "https://www.frjcohsa.com",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.59,
+      "score": 0.9959,
+      "indicators": []
+    },
+    {
+      "url": "https://gongzhuchao.com",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.58,
+      "score": 0.9958,
+      "indicators": []
+    },
+    {
+      "url": "https://www.figurinebay.com",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.58,
+      "score": 0.9958,
+      "indicators": []
+    },
+    {
+      "url": "https://arbirtrium.com",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.56,
+      "score": 0.9956,
+      "indicators": []
+    },
+    {
+      "url": "https://www.nailcanhillrun.com.au",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.56,
+      "score": 0.9956,
+      "indicators": []
+    },
+    {
+      "url": "https://appechanger.com",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.55,
+      "score": 0.9955,
+      "indicators": []
+    },
+    {
+      "url": "https://www.bendedgo-line.com",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.53,
+      "score": 0.9953,
+      "indicators": []
+    },
+    {
+      "url": "https://healthyharvestke.com",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.52,
+      "score": 0.9952,
+      "indicators": []
+    },
+    {
+      "url": "https://brainsprinkling.com",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.52,
+      "score": 0.9952,
+      "indicators": []
+    },
+    {
+      "url": "https://www.agricolapatagonia.com",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.5,
+      "score": 0.995,
+      "indicators": []
+    },
+    {
+      "url": "https://www.attemplate.com",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.49,
+      "score": 0.9949,
+      "indicators": []
+    },
+    {
+      "url": "https://www.michelonturismo.com.br",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.48,
+      "score": 0.9948,
+      "indicators": []
+    },
+    {
+      "url": "https://www.cyberwolftec.com",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.48,
+      "score": 0.9948,
+      "indicators": []
+    },
+    {
+      "url": "https://fleurnova.com",
+      "actual": "PHISHING",
+      "predicted": "SAFE",
+      "confidence": 99.47,
+      "score": 0.9947,
+      "indicators": []
+    }
+  ]
+}

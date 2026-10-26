@@ -9,16 +9,37 @@ export interface PredictionRequest {
   url: string;
 }
 
+export interface FeatureContribution {
+  feature: string;
+  contribution: number;
+  direction: "PHISHING" | "SAFE";
+}
+
 export interface PredictionResult {
   url: string;
-  prediction: "PHISHING" | "LIKELY LEGITIMATE" | "SAFE" | null;
+  prediction: "PHISHING" | "SAFE" | "LIKELY LEGITIMATE" | null;
   risk_level: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | null;
   score: number | null;
-  score_type: "model_probability" | "model_score" | "unavailable";
+  score_type: "calibrated_probability" | "model_probability" | "model_score" | "unavailable";
+  confidence?: number | null;
+  confidence_str?: string;
+  threshold?: number;
   indicators: string[];
+  feature_contributions?: FeatureContribution[];
   features: Record<string, number>;
   disclaimer: string;
   error?: string;
+}
+
+export interface BatchPredictionResponse {
+  results: PredictionResult[];
+  total: number;
+  threshold: number;
+  summary: {
+    safe_count: number;
+    phishing_count: number;
+    error_count: number;
+  };
 }
 
 // ── Health ────────────────────────────────────────────────────────────────
@@ -69,6 +90,9 @@ export interface TestMetrics {
   f1: number;
   roc_auc: number | null;
   average_precision: number | null;
+  brier_score?: number | null;
+  false_positive_rate?: number | null;
+  decision_threshold?: number;
   confusion_matrix: number[][];
   test_accuracy?: number;
   phishing_precision?: number;
@@ -103,6 +127,8 @@ export interface FeatureImportance {
 
 export interface ModelMetricsResponse {
   test_metrics: TestMetrics;
+  best_model?: string;
+  decision_threshold?: number;
   validation_comparison?: Record<string, ValidationEntry>;
   cross_validation?: Record<string, any>;
   feature_importances?: FeatureImportance[];

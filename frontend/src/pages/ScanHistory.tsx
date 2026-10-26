@@ -31,7 +31,7 @@ function PredBadge({ pred }: { pred: string | null }) {
   return (
     <div className="flex items-center gap-1.5 badge-safe">
       <CheckCircle size={11} />
-      Legitimate
+      Safe
     </div>
   );
 }

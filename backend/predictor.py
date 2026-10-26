@@ -237,6 +237,79 @@ def _map_risk_level(score: float, prediction_label: int | str) -> str:
         return "LOW"
 
 
+def _extract_top_contributions(model, scaler, vectorizer, X_input, top_k: int = 8) -> list[dict]:
+    """
+    Extract top contributing features using Tree SHAP values (for LightGBM/XGBoost/tree models)
+    or coefficient x value (for linear models).
+    Returns list of dicts: [{"feature": str, "contribution": float, "direction": "PHISHING"|"SAFE"}].
+    """
+    if model is None:
+        return []
+
+    try:
+        estimators = []
+        if hasattr(model, "calibrated_classifiers_"):
+            for clf in model.calibrated_classifiers_:
+                base = getattr(clf, "estimator", getattr(clf, "base_estimator", None))
+                if base is not None:
+                    estimators.append(base)
+        else:
+            estimators.append(model)
+
+        if not estimators:
+            return []
+
+        contrib_list = []
+        for est in estimators:
+            if hasattr(est, "booster_") and hasattr(est.booster_, "predict"):
+                c = est.booster_.predict(X_input, pred_contrib=True)
+                if hasattr(c, "toarray"):
+                    c = c.toarray()
+                contrib_list.append(np.asarray(c)[0])
+            elif hasattr(est, "coef_"):
+                coef = np.asarray(est.coef_)
+                if hasattr(X_input, "toarray"):
+                    x_arr = X_input.toarray()[0]
+                else:
+                    x_arr = np.asarray(X_input)[0]
+                c = coef[0] * x_arr
+                contrib_list.append(c)
+
+        if not contrib_list:
+            return []
+
+        mean_contrib = np.mean(contrib_list, axis=0)
+        # Tree SHAP appends expected value (bias) at the end; linear models don't
+        expected_len = len(FEATURE_NAMES) + (len(vectorizer.get_feature_names_out()) if vectorizer is not None and hasattr(vectorizer, "get_feature_names_out") else 0)
+        if len(mean_contrib) > expected_len:
+            mean_contrib = mean_contrib[:-1]
+
+        fnames = list(FEATURE_NAMES)
+        if vectorizer is not None and hasattr(vectorizer, "get_feature_names_out"):
+            fnames += [f"n-gram '{w}'" for w in vectorizer.get_feature_names_out()]
+
+        if len(mean_contrib) != len(fnames):
+            limit = min(len(mean_contrib), len(fnames))
+            mean_contrib = mean_contrib[:limit]
+            fnames = fnames[:limit]
+
+        top_idx = np.argsort(np.abs(mean_contrib))[::-1][:top_k]
+        results = []
+        for idx in top_idx:
+            val = float(mean_contrib[idx])
+            if abs(val) < 0.001:
+                continue
+            results.append({
+                "feature": fnames[idx],
+                "contribution": round(val, 4),
+                "direction": "PHISHING" if val > 0 else "SAFE",
+            })
+        return results
+    except Exception as exc:
+        log.warning("Feature contribution calculation failed: %s", exc)
+        return []
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # Public API
 # ──────────────────────────────────────────────────────────────────────────
@@ -336,8 +409,9 @@ def predict_url(url: str) -> dict:
     effective_score = score if score is not None else (0.8 if pred_label == 1 else 0.2)
     risk_level = _map_risk_level(effective_score, pred_label)
 
-    # ── 6. Indicators ────────────────────────────────────────────────────
+    # ── 6. Indicators & Feature Contributions ────────────────────────────
     indicators = get_risk_indicators(feat_dict)
+    feature_contributions = _extract_top_contributions(_model, _scaler, _vectorizer, X_input)
 
     # ── 7. Return structured result ──────────────────────────────────────
     confidence_str = f"{confidence_pct:.1f}%" if confidence_pct is not None else "N/A"
@@ -351,6 +425,7 @@ def predict_url(url: str) -> dict:
         "score": round(score, 4) if score is not None else None,
         "score_type": score_type,
         "indicators": indicators,
+        "feature_contributions": feature_contributions,
         "features": {name: round(float(val), 6) for name, val in feat_dict.items()},
         "disclaimer": DISCLAIMER,
     }

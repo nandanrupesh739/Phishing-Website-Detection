@@ -6,11 +6,13 @@ All sensitive values must be set in the .env file (never committed to git).
 """
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # ──────────────────────────────────────────────
 # Root paths
 # ──────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent.parent  # project root
+load_dotenv(BASE_DIR / ".env")
 
 # ──────────────────────────────────────────────
 # Data paths

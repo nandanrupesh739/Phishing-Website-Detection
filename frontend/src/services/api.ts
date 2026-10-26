@@ -39,10 +39,20 @@ export async function fetchHealth(): Promise<HealthResponse> {
 }
 
 // ── Predict ───────────────────────────────────────────────────────────────
-export async function predictUrl(url: string): Promise<PredictionResult> {
+export async function predictUrl(url: string, anonymize?: boolean): Promise<PredictionResult> {
   return request<PredictionResult>('/predict', {
     method: 'POST',
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ url, anonymize }),
+  });
+}
+
+export async function predictBatch(
+  urls: string[],
+  anonymize?: boolean
+): Promise<import('../types/api').BatchPredictionResponse> {
+  return request<import('../types/api').BatchPredictionResponse>('/predict-batch', {
+    method: 'POST',
+    body: JSON.stringify({ urls, anonymize }),
   });
 }
 
