@@ -80,15 +80,31 @@ def insert_scan(
     model_score: float | None,
     score_type: str | None,
     model_version: str | None,
+    anonymize: bool | None = None,
 ) -> int:
     """
     Insert a scan result into the history table.
     Returns the new row id.
 
-    NOTE: Only URL structure data is stored — no page content, cookies, or
-    authentication material.  Users should be aware that the URL itself
-    may contain sensitive query parameters.
+    If anonymize is True (or config.ANONYMIZE_URLS is enabled), only the
+    hostname and a truncated SHA-256 hash of the URL are stored.
     """
+    import hashlib
+    import urllib.parse
+    from backend import config
+
+    should_anonymize = anonymize if anonymize is not None else config.ANONYMIZE_URLS
+    if should_anonymize and submitted_url:
+        try:
+            parsed = urllib.parse.urlsplit(submitted_url if "://" in submitted_url else "http://" + submitted_url)
+            host = parsed.netloc or parsed.path.split("/")[0] or "unknown-host"
+        except Exception:
+            host = "unknown-host"
+        url_hash = hashlib.sha256(submitted_url.encode("utf-8")).hexdigest()[:12]
+        stored_url = f"{host} [sha256:{url_hash}]"
+    else:
+        stored_url = submitted_url
+
     timestamp = datetime.now(timezone.utc).isoformat()
     with _get_conn() as conn:
         cur = conn.execute(
@@ -99,7 +115,7 @@ def insert_scan(
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                submitted_url,
+                stored_url,
                 prediction,
                 risk_level,
                 model_score,

@@ -270,6 +270,103 @@ class TestModelInfoEndpoint:
 
 
 # ---------------------------------------------------------------------------
+# POST /api/predict-batch
+# ---------------------------------------------------------------------------
+
+class TestPredictBatchEndpoint:
+    def test_predict_batch_success(self, app):
+        payload = {"urls": ["https://example.com/a", "https://google.com"]}
+        resp = app.post("/api/predict-batch", data=json.dumps(payload), content_type="application/json")
+        assert resp.status_code == 200
+        data = resp_json(resp)
+        assert "results" in data
+        assert len(data["results"]) == 2
+        assert "summary" in data
+
+    def test_predict_batch_exceeding_max_limit_rejected(self, app):
+        payload = {"urls": [f"https://example.com/{i}" for i in range(101)]}
+        resp = app.post("/api/predict-batch", data=json.dumps(payload), content_type="application/json")
+        assert resp.status_code == 400
+        data = resp_json(resp)
+        assert "exceeds maximum" in data["error"]
+
+    def test_predict_batch_empty_list_rejected(self, app):
+        payload = {"urls": []}
+        resp = app.post("/api/predict-batch", data=json.dumps(payload), content_type="application/json")
+        assert resp.status_code == 400
+
+    def test_predict_batch_non_list_rejected(self, app):
+        payload = {"urls": "https://example.com"}
+        resp = app.post("/api/predict-batch", data=json.dumps(payload), content_type="application/json")
+        assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/history API Key Protection
+# ---------------------------------------------------------------------------
+
+class TestDeleteHistoryApiKey:
+    def test_delete_history_rejected_when_api_key_configured_but_missing(self, app, monkeypatch):
+        import backend.config as cfg
+        monkeypatch.setattr(cfg, "HISTORY_API_KEY", "secret-admin-key")
+
+        resp = app.delete("/api/history")
+        assert resp.status_code == 401
+        assert "Unauthorized" in resp_json(resp)["error"]
+
+    def test_delete_history_accepted_with_valid_api_key(self, app, monkeypatch):
+        import backend.config as cfg
+        monkeypatch.setattr(cfg, "HISTORY_API_KEY", "secret-admin-key")
+
+        resp = app.delete("/api/history", headers={"x-api-key": "secret-admin-key"})
+        assert resp.status_code == 200
+        assert "cleared" in resp_json(resp)["message"]
+
+
+# ---------------------------------------------------------------------------
+# Anonymize Stored URLs Option
+# ---------------------------------------------------------------------------
+
+class TestAnonymizeUrls:
+    def test_anonymize_url_storage(self, app, monkeypatch):
+        import backend.config as cfg
+        from backend.database import get_history
+
+        url = "https://sensitive-corp.com/secret/path?token=veryprivate123"
+        payload = {"url": url, "anonymize": True}
+        resp = app.post("/api/predict", data=json.dumps(payload), content_type="application/json")
+        assert resp.status_code == 200
+
+        records = get_history(limit=1)
+        assert len(records) > 0
+        stored = records[0]["submitted_url"]
+        assert "sensitive-corp.com" in stored
+        assert "[sha256:" in stored
+        assert "veryprivate123" not in stored
+
+
+# ---------------------------------------------------------------------------
+# Production SECRET_KEY Enforcement
+# ---------------------------------------------------------------------------
+
+class TestSecretKeyProductionCheck:
+    def test_enforce_production_secret_key_raises(self, monkeypatch):
+        import backend.config as cfg
+        from backend.app import enforce_production_secret_key
+        from flask import Flask
+
+        monkeypatch.setattr(cfg, "FLASK_DEBUG", False)
+        monkeypatch.setattr(cfg, "SECRET_KEY", "change-me-in-production")
+
+        dummy_app = Flask("test_prod_app")
+        dummy_app.config["TESTING"] = False
+
+        with pytest.raises(RuntimeError) as exc_info:
+            enforce_production_secret_key(dummy_app, force_check=True)
+        assert "SECRET_KEY must be configured" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

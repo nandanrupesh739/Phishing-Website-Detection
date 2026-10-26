@@ -78,6 +78,14 @@ def load_model(force_reload: bool = False) -> Any:
             "Please run 'python train.py' first."
         )
 
+    # Ensure target_path is restricted exclusively to project models directory
+    try:
+        target_path.resolve().relative_to(MODELS_DIR.resolve())
+    except ValueError:
+        raise PermissionError(
+            f"Security violation: Model file '{target_path}' is outside approved '{MODELS_DIR}' directory."
+        )
+
     log.info("Loading model from %s …", target_path)
     loaded = joblib.load(target_path)
 
@@ -132,7 +140,11 @@ def model_is_available() -> bool:
     try:
         load_model()
         return True
-    except (ModelNotFoundError, Exception):
+    except ModelNotFoundError as exc:
+        log.info("Model not available: %s", exc)
+        return False
+    except (AttributeError, KeyError, ValueError, EOFError, ImportError, OSError, PermissionError) as exc:
+        log.error("Failed to load model file due to corrupted format: %s", exc)
         return False
 
 

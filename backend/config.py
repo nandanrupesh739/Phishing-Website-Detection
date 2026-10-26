@@ -52,10 +52,14 @@ _raw_origins = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://1
 CORS_ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
 # ──────────────────────────────────────────────
-# API limits
+# API limits & Security
 # ──────────────────────────────────────────────
 MAX_URL_LENGTH = int(os.getenv("MAX_URL_LENGTH", "2048"))
 HISTORY_PAGE_SIZE = int(os.getenv("HISTORY_PAGE_SIZE", "50"))
+RATE_LIMIT_PREDICT = os.getenv("RATE_LIMIT_PREDICT", "60 per minute")
+MAX_BATCH_SIZE = int(os.getenv("MAX_BATCH_SIZE", "100"))
+HISTORY_API_KEY = os.getenv("HISTORY_API_KEY", "")
+ANONYMIZE_URLS = os.getenv("ANONYMIZE_URLS", "false").lower() == "true"
 
 # ──────────────────────────────────────────────
 # Training hyper-parameters (fixed seeds)
