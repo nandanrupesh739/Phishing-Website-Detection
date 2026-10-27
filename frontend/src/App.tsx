@@ -201,9 +201,9 @@ export default function App() {
       </aside>
 
       {/* ── Main content area ───────────────────────────────────────────── */}
-      <div className="lg:pl-64 min-h-screen flex flex-col flex-1">
+      <div className="lg:pl-64 min-h-screen flex flex-col flex-1 w-full max-w-full overflow-x-hidden">
         {/* Top bar (mobile) */}
-        <header className="lg:hidden sticky top-0 z-20 flex items-center justify-between px-4 py-3 border-b border-blue-900/20"
+        <header className="lg:hidden sticky top-0 z-20 flex items-center justify-between px-3 py-2.5 sm:px-4 sm:py-3 border-b border-blue-900/20"
           style={{ background: 'rgba(6, 14, 39, 0.95)', backdropFilter: 'blur(12px)' }}>
           <button
             id="mobile-menu-btn"
@@ -226,7 +226,7 @@ export default function App() {
         </header>
 
         {/* Page content with ErrorBoundary wrapping each page (Phase 5.1 requirement) */}
-        <main className="flex-1 p-4 md:p-6 lg:p-8 animate-fade-in">
+        <main className="flex-1 p-3 sm:p-4 md:p-6 lg:p-8 animate-fade-in w-full max-w-full overflow-x-hidden">
           {page === 'dashboard' && (
             <ErrorBoundary pageName="Dashboard">
               <Dashboard onNavigate={navigate} />

@@ -327,6 +327,7 @@ export default function ScanHistory() {
         <div className="flex flex-col md:flex-row gap-3">
           {/* Search input */}
           <div className="relative flex-1">
+            <label htmlFor="history-search" className="sr-only">Search scan history</label>
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
             <input
               id="history-search"
@@ -342,13 +343,14 @@ export default function ScanHistory() {
           {/* Filters & Sorting */}
           <div className="flex flex-wrap items-center gap-2">
             {/* Prediction Filter */}
-            <div className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-lg border border-slate-800 text-xs">
+            <div className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-lg border border-slate-800 text-xs" role="group" aria-label="Prediction Filter">
               <span className="text-[11px] text-slate-500 px-1 font-medium">Pred:</span>
               {(['ALL', 'SAFE', 'PHISHING'] as const).map(p => (
                 <button
                   key={p}
                   type="button"
                   onClick={() => setPredFilter(p)}
+                  aria-pressed={predFilter === p}
                   className={`px-2 py-1 rounded text-xs transition-colors ${
                     predFilter === p
                       ? 'bg-blue-600 text-white font-semibold'
@@ -361,7 +363,9 @@ export default function ScanHistory() {
             </div>
 
             {/* Risk Level Filter */}
+            <label htmlFor="risk-filter" className="sr-only">Filter by risk level</label>
             <select
+              id="risk-filter"
               value={riskFilter}
               onChange={e => setRiskFilter(e.target.value)}
               className="bg-slate-900/80 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-blue-500"
@@ -377,7 +381,9 @@ export default function ScanHistory() {
             {/* Sort Selector */}
             <div className="flex items-center gap-1 bg-slate-900/80 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-300">
               <ArrowUpDown size={13} className="text-slate-400" />
+              <label htmlFor="sort-by" className="sr-only">Sort history by</label>
               <select
+                id="sort-by"
                 value={sortBy}
                 onChange={e => setSortBy(e.target.value as any)}
                 className="bg-transparent text-xs text-slate-300 focus:outline-none cursor-pointer"

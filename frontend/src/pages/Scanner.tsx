@@ -477,10 +477,10 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
       {!showBatch && (
         <div className="glass-card p-6 space-y-4">
           <div className="flex items-center justify-between text-sm text-slate-400 mb-1">
-            <div className="flex items-center gap-2">
+            <label htmlFor="url-input" className="flex items-center gap-2 cursor-pointer font-medium">
               <Link2 size={14} className="text-blue-400" />
               <span>Enter target URL:</span>
-            </div>
+            </label>
             <span className={`text-xs font-mono ${url.length > 2000 ? 'text-red-400' : 'text-slate-500'}`}>
               {url.length} / 2048 chars
             </span>
@@ -501,7 +501,7 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
                 spellCheck={false}
                 autoComplete="off"
                 maxLength={2048}
-                aria-label="URL to scan"
+                aria-label="Target URL to scan"
               />
               {url && (
                 <button
@@ -518,6 +518,7 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
               onClick={handleScan}
               disabled={loading || !url.trim()}
               className="btn-primary shrink-0"
+              aria-label="Analyze URL"
             >
               {loading ? (
                 <><Loader2 size={18} className="animate-spin" /> Analyzing…</>
@@ -543,7 +544,7 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
           </div>
 
           {error && !isOffline && (
-            <div className="flex items-start gap-2.5 p-3 rounded-lg text-sm bg-red-950/20 border border-red-500/25 text-red-400">
+            <div role="alert" aria-live="polite" className="flex items-start gap-2.5 p-3 rounded-lg text-sm bg-red-950/20 border border-red-500/25 text-red-400">
               <AlertTriangle size={16} className="shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
@@ -651,7 +652,10 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
             />
           </div>
 
+          <label htmlFor="batch-urls-input" className="sr-only">Batch URLs input</label>
           <textarea
+            id="batch-urls-input"
+            aria-label="Batch URLs to scan (one per line, up to 100)"
             value={batchInput}
             onChange={e => setBatchInput(e.target.value)}
             placeholder="Paste one URL per line:&#10;https://secure-portal.example-university.edu/student/login&#10;https://paypal.com.account-verification-service.xyz/secure/login&#10;http://192.168.1.105:8080/appleid/verify-identity-confirm"
@@ -685,7 +689,7 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
 
           {/* Progress Indicator */}
           {batchLoading && (
-            <div className="p-4 rounded-xl bg-slate-900/80 border border-teal-500/30 space-y-2 animate-pulse">
+            <div className="p-4 rounded-xl bg-slate-900/80 border border-teal-500/30 space-y-2 animate-pulse" role="status" aria-live="polite">
               <div className="flex items-center justify-between text-xs text-teal-300">
                 <span className="flex items-center gap-2 font-semibold">
                   <Loader2 size={14} className="animate-spin text-teal-400" />
@@ -700,7 +704,7 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
           )}
 
           {batchError && (
-            <div className="p-3 rounded-lg text-xs bg-red-950/20 border border-red-500/25 text-red-400">
+            <div role="alert" aria-live="polite" className="p-3 rounded-lg text-xs bg-red-950/20 border border-red-500/25 text-red-400">
               {batchError}
             </div>
           )}
@@ -854,7 +858,7 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
 
       {/* Single Scan Result */}
       {result && !loading && (
-        <div className="space-y-4 animate-slide-up">
+        <div className="space-y-4 animate-slide-up" role="region" aria-live="polite" aria-label="Scan Result">
           <div
             className="glass-card p-6 space-y-5"
             style={{
