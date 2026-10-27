@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import { predictUrl, predictBatch } from '../services/api';
 import type { PredictionResult, BatchPredictionResponse } from '../types/api';
+import { sanitizeCsvCell } from '../utils/formatters';
 
 const RISK_CONFIG = {
   CRITICAL: { label: 'Critical Risk', color: '#ef4444', bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.4)', icon: XCircle },
@@ -328,20 +329,38 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const [isDragging, setIsDragging] = useState(false);
+  const [batchSearch, setBatchSearch] = useState('');
+  const [batchFilter, setBatchFilter] = useState<'ALL' | 'SAFE' | 'PHISHING' | 'ERROR'>('ALL');
+  const [batchSort, setBatchSort] = useState<'default' | 'conf_desc' | 'conf_asc'>('default');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const processBatchFile = (file: File) => {
     if (!file) return;
+    const lowerName = file.name.toLowerCase();
+    if (!lowerName.endsWith('.csv') && !lowerName.endsWith('.txt')) {
+      setBatchError('Unsupported file type. Please upload a .csv or .txt file.');
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      setBatchError(`File size (${(file.size / 1024).toFixed(0)} KB) exceeds 1MB maximum limit.`);
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = ev => {
       const text = ev.target?.result as string;
       if (text) {
-        // Extract URLs from CSV column or newline-separated lines
         const lines = text
           .split(/\r?\n/)
           .map(l => l.split(',')[0].replace(/^["']|["']$/g, '').trim())
-          .filter(l => l && !l.toLowerCase().startsWith('url'));
+          .filter(l => l && !l.toLowerCase().startsWith('url') && !l.startsWith('#'));
+        if (lines.length === 0) {
+          setBatchError('No URLs found in the selected file.');
+          return;
+        }
         setBatchInput(lines.slice(0, 100).join('\n'));
+        setBatchError('');
       }
     };
     reader.readAsText(file);
@@ -352,20 +371,21 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
 
     const headers = ['URL', 'Prediction', 'Confidence', 'Risk Level', 'Score', 'Indicators'];
     const rows = batchResult.results.map(r => [
-      `"${r.url.replace(/"/g, '""')}"`,
-      r.prediction ?? 'ERROR',
-      r.confidence !== null && r.confidence !== undefined ? `${r.confidence}%` : 'N/A',
-      r.risk_level ?? 'UNKNOWN',
-      r.score ?? '',
-      `"${(r.indicators || []).join('; ').replace(/"/g, '""')}"`,
+      sanitizeCsvCell(r.url),
+      sanitizeCsvCell(r.prediction ?? 'ERROR'),
+      sanitizeCsvCell(r.confidence !== null && r.confidence !== undefined ? `${r.confidence.toFixed(1)}%` : 'N/A'),
+      sanitizeCsvCell(r.risk_level ?? 'UNKNOWN'),
+      sanitizeCsvCell(r.score ?? ''),
+      sanitizeCsvCell((r.indicators || []).join('; ')),
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `phishguard_batch_results_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
+    URL.revokeObjectURL(link.href);
   };
 
   const handleCopyUrl = () => {
@@ -592,21 +612,49 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
               <FileSpreadsheet size={16} className="text-teal-400" />
               <span>Batch Scanner (Up to 100 URLs)</span>
             </div>
-            <label className="btn-ghost text-xs cursor-pointer flex items-center gap-1 border border-slate-700">
-              <Upload size={13} />
-              <span>Upload CSV / TXT</span>
-              <input type="file" accept=".csv,.txt" onChange={handleFileUpload} className="hidden" />
-            </label>
+            <div className="text-xs font-mono text-slate-400">
+              {batchInput.split('\n').filter(u => u.trim() && !u.startsWith('#')).length} / 100 URLs queued
+            </div>
           </div>
 
-          <p className="text-xs text-slate-400">
-            Paste one URL per line or upload a file containing URLs in the first column.
-          </p>
+          {/* Drag and Drop Zone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={e => {
+              e.preventDefault();
+              setIsDragging(false);
+              const file = e.dataTransfer.files?.[0];
+              if (file) processBatchFile(file);
+            }}
+            onClick={() => fileInputRef.current?.click()}
+            className={`p-5 rounded-xl border-2 border-dashed transition-all flex flex-col items-center justify-center gap-2 text-center cursor-pointer ${
+              isDragging
+                ? 'border-teal-400 bg-teal-500/10'
+                : 'border-slate-700/80 hover:border-slate-600 bg-slate-900/40'
+            }`}
+          >
+            <Upload size={22} className={isDragging ? 'text-teal-400' : 'text-slate-500'} />
+            <div className="text-xs text-slate-300">
+              <span className="text-teal-400 font-semibold">Click to upload</span> or drag and drop a <code className="font-mono bg-black/40 px-1 py-0.5 rounded text-cyan-300">.csv</code> or <code className="font-mono bg-black/40 px-1 py-0.5 rounded text-cyan-300">.txt</code> file
+            </div>
+            <div className="text-[11px] text-slate-500">Max file size 1MB (first 100 URLs will be loaded)</div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.txt"
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) processBatchFile(f);
+              }}
+              className="hidden"
+            />
+          </div>
 
           <textarea
             value={batchInput}
             onChange={e => setBatchInput(e.target.value)}
-            placeholder="https://example1.com&#10;https://paypal.com.evil.xyz/login&#10;https://google.com"
+            placeholder="Paste one URL per line:&#10;https://secure-portal.example-university.edu/student/login&#10;https://paypal.com.account-verification-service.xyz/secure/login&#10;http://192.168.1.105:8080/appleid/verify-identity-confirm"
             rows={5}
             className="input-cyber w-full font-mono text-xs"
             disabled={batchLoading}
@@ -622,18 +670,34 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
                 className="rounded bg-slate-900 border-slate-700 text-blue-500 cursor-pointer"
               />
               <label htmlFor="batch-anon-check" className="cursor-pointer">
-                Anonymize stored URLs
+                Anonymize stored URLs (store domain + SHA-256 hash only)
               </label>
             </div>
 
             <button
               onClick={handleBatchScan}
               disabled={batchLoading || !batchInput.trim()}
-              className="btn-primary text-xs"
+              className="btn-primary text-xs flex items-center gap-1.5"
             >
               {batchLoading ? <><Loader2 size={14} className="animate-spin" /> Processing Batch…</> : <><Scan size={14} /> Scan Batch</>}
             </button>
           </div>
+
+          {/* Progress Indicator */}
+          {batchLoading && (
+            <div className="p-4 rounded-xl bg-slate-900/80 border border-teal-500/30 space-y-2 animate-pulse">
+              <div className="flex items-center justify-between text-xs text-teal-300">
+                <span className="flex items-center gap-2 font-semibold">
+                  <Loader2 size={14} className="animate-spin text-teal-400" />
+                  Analyzing batch URLs with machine learning model…
+                </span>
+                <span>In progress</span>
+              </div>
+              <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-full bg-teal-500 rounded-full animate-pulse w-3/4" />
+              </div>
+            </div>
+          )}
 
           {batchError && (
             <div className="p-3 rounded-lg text-xs bg-red-950/20 border border-red-500/25 text-red-400">
@@ -644,38 +708,129 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
           {/* Batch Results Output */}
           {batchResult && (
             <div className="space-y-4 pt-3 border-t border-slate-800">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3 text-xs">
-                  <span className="font-semibold text-white">Processed: {batchResult.total} URLs</span>
-                  <span className="text-emerald-400">Safe: {batchResult.summary.safe_count}</span>
-                  <span className="text-red-400">Phishing: {batchResult.summary.phishing_count}</span>
-                  {batchResult.summary.error_count > 0 && (
-                    <span className="text-amber-400">Errors: {batchResult.summary.error_count}</span>
-                  )}
+              {/* Summary Counts */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800 text-center">
+                  <div className="text-[10px] text-slate-500 uppercase font-semibold">Total URLs</div>
+                  <div className="text-lg font-bold text-white mt-0.5">{batchResult.total}</div>
                 </div>
+                <div className="p-3 rounded-lg bg-emerald-950/20 border border-emerald-500/30 text-center">
+                  <div className="text-[10px] text-emerald-400 uppercase font-semibold">Safe Found</div>
+                  <div className="text-lg font-bold text-emerald-300 mt-0.5">{batchResult.summary.safe_count}</div>
+                </div>
+                <div className="p-3 rounded-lg bg-red-950/20 border border-red-500/30 text-center">
+                  <div className="text-[10px] text-red-400 uppercase font-semibold">Phishing Found</div>
+                  <div className="text-lg font-bold text-red-300 mt-0.5">{batchResult.summary.phishing_count}</div>
+                </div>
+                <div className="p-3 rounded-lg bg-amber-950/20 border border-amber-500/30 text-center">
+                  <div className="text-[10px] text-amber-400 uppercase font-semibold">Invalid / Errors</div>
+                  <div className="text-lg font-bold text-amber-300 mt-0.5">{batchResult.summary.error_count}</div>
+                </div>
+              </div>
+
+              {/* Table Controls: Search, Filter, Sort, Export */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5">
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                  <input
+                    type="text"
+                    value={batchSearch}
+                    onChange={e => setBatchSearch(e.target.value)}
+                    placeholder="Search batch URLs…"
+                    className="input-cyber text-xs py-1 px-2.5 w-44"
+                  />
+                  <div className="flex items-center gap-1 bg-slate-900/80 p-0.5 rounded border border-slate-800 text-xs">
+                    {(['ALL', 'SAFE', 'PHISHING', 'ERROR'] as const).map(f => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setBatchFilter(f)}
+                        className={`px-2 py-0.5 rounded text-[11px] ${
+                          batchFilter === f
+                            ? 'bg-teal-600 text-white font-semibold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                  <select
+                    value={batchSort}
+                    onChange={e => setBatchSort(e.target.value as any)}
+                    className="bg-slate-900/80 border border-slate-800 rounded px-2 py-1 text-xs text-slate-300"
+                  >
+                    <option value="default">Default Order</option>
+                    <option value="conf_desc">Confidence High-Low</option>
+                    <option value="conf_asc">Confidence Low-High</option>
+                  </select>
+                </div>
+
                 <button
+                  id="download-batch-csv-btn"
                   onClick={handleDownloadCsv}
-                  className="btn-ghost text-xs text-teal-400 flex items-center gap-1 border border-teal-500/30"
+                  className="btn-ghost text-xs text-teal-400 flex items-center gap-1.5 border border-teal-500/30 shrink-0 self-end sm:self-auto"
                 >
                   <Download size={13} />
-                  <span>Download Results CSV</span>
+                  <span>Export CSV (Protected)</span>
                 </button>
               </div>
 
-              <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
-                {batchResult.results.map((r, i) => (
-                  <div key={i} className="flex items-center justify-between p-2 rounded bg-slate-900/60 border border-slate-800 text-xs font-mono">
-                    <span className="truncate max-w-[60%] text-slate-300" title={r.url}>{r.url}</span>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.prediction === 'PHISHING' ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-                        {r.prediction ?? 'ERROR'}
-                      </span>
-                      <span className="text-slate-400 text-[11px]">
-                        {r.confidence !== null && r.confidence !== undefined ? `${r.confidence.toFixed(1)}%` : 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+              {/* Results Table */}
+              <div className="border border-slate-800 rounded-lg overflow-hidden bg-slate-950/60 max-h-72 overflow-y-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-900/80 text-slate-400 uppercase tracking-wider text-[11px] sticky top-0 border-b border-slate-800">
+                    <tr>
+                      <th className="p-2.5 font-semibold">Target URL (Non-navigable)</th>
+                      <th className="p-2.5 font-semibold text-center w-28">Prediction</th>
+                      <th className="p-2.5 font-semibold text-center w-24">Confidence</th>
+                      <th className="p-2.5 font-semibold text-center w-24">Risk</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {batchResult.results
+                      .filter(r => {
+                        if (batchSearch) {
+                          const q = batchSearch.toLowerCase();
+                          if (!r.url.toLowerCase().includes(q) && !(r.prediction ?? '').toLowerCase().includes(q)) {
+                            return false;
+                          }
+                        }
+                        if (batchFilter === 'SAFE') return r.prediction === 'SAFE' || r.prediction === 'LIKELY LEGITIMATE';
+                        if (batchFilter === 'PHISHING') return r.prediction === 'PHISHING';
+                        if (batchFilter === 'ERROR') return !r.prediction || !!r.error;
+                        return true;
+                      })
+                      .sort((a, b) => {
+                        if (batchSort === 'conf_desc') return (b.confidence ?? 0) - (a.confidence ?? 0);
+                        if (batchSort === 'conf_asc') return (a.confidence ?? 0) - (b.confidence ?? 0);
+                        return 0;
+                      })
+                      .map((r, i) => (
+                        <tr key={i} className="hover:bg-slate-900/40">
+                          <td className="p-2.5 max-w-xs font-mono text-xs text-slate-300 break-all select-all">
+                            {r.url}
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              r.prediction === 'PHISHING'
+                                ? 'bg-red-500/20 text-red-400'
+                                : r.prediction === 'SAFE'
+                                ? 'bg-emerald-500/20 text-emerald-400'
+                                : 'bg-amber-500/20 text-amber-400'
+                            }`}>
+                              {r.prediction ?? 'ERROR'}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-center font-mono text-slate-300">
+                            {r.confidence !== null && r.confidence !== undefined ? `${r.confidence.toFixed(1)}%` : '—'}
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <span className="text-[11px] font-semibold text-slate-400">{r.risk_level ?? '—'}</span>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

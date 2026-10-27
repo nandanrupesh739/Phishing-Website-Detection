@@ -37,3 +37,18 @@ export function formatScore(
   }
   return value.toFixed(decimals);
 }
+
+/**
+ * Sanitize a CSV cell value to protect against CSV Formula Injection (CWE-1236).
+ * Any cell starting with =, +, -, @ is prefixed with a single quote '.
+ * Quotes within cells are escaped as "".
+ */
+export function sanitizeCsvCell(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return '""';
+  let str = String(value);
+  // Formula injection protection: prefix with ' if starting with =, +, -, or @
+  if (/^[=+\-@]/.test(str)) {
+    str = `'${str}`;
+  }
+  return `"${str.replace(/"/g, '""')}"`;
+}
