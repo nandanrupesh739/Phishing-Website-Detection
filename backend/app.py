@@ -79,6 +79,16 @@ limiter = Limiter(
 CORS(app, origins=config.CORS_ALLOWED_ORIGINS, methods=["GET", "POST", "DELETE"])
 
 
+@app.after_request
+def add_security_headers(response):
+    """Add defensive security headers to all HTTP responses."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none';"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
 def enforce_production_secret_key(app_instance: Flask, force_check: bool = False) -> None:
     """Ensure SECRET_KEY is not default in non-debug production deployment."""
     is_testing = not force_check and ("pytest" in sys.modules or app_instance.config.get("TESTING", False))

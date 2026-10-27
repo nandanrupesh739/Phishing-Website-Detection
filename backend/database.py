@@ -61,11 +61,17 @@ def _get_conn() -> Generator[sqlite3.Connection, None, None]:
 # ──────────────────────────────────────────────────────────────────────────
 
 def init_db() -> None:
-    """Create the database file and tables if they do not exist."""
+    """Create the database file and tables if they do not exist, and migrate legacy schemas."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with _get_conn() as conn:
         conn.execute(CREATE_TABLE_SQL)
         conn.execute(CREATE_INDEX_SQL)
+        # Old-schema migration: add score_type column if table was created by older schema
+        cur = conn.execute("PRAGMA table_info(scan_history)")
+        existing_cols = [row["name"] if isinstance(row, sqlite3.Row) else row[1] for row in cur.fetchall()]
+        if "score_type" not in existing_cols:
+            conn.execute("ALTER TABLE scan_history ADD COLUMN score_type TEXT")
+            log.info("Migrated scan_history table: added missing column 'score_type'")
     log.info("Database initialised at %s", DB_PATH)
 
 
