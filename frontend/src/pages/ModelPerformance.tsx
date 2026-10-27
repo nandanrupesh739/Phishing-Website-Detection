@@ -244,6 +244,7 @@ export default function ModelPerformance() {
           <MetricCard label="Brier Score"        value={brierScore} color="#10b981" sub="Calibration (lower is better)" isPercent={false} decimals={4} />
           <MetricCard label="False Pos. Rate"    value={fpr}       color="#38bdf8" sub="Legit flagged as phish" />
           <MetricCard label="Decision Threshold" value={decisionThresh} color="#a855f7" sub="Tuned on validation set" isPercent={false} decimals={4} />
+          <MetricCard label="Target Recall"      value={info?.target_phishing_recall ?? 0.98} color="#ec4899" sub="Target sensitivity on val" />
           <MetricCard label="Macro F1"           value={macroF1}   color="#8b5cf6" sub="Unweighted avg F1" />
         </div>
       </div>
@@ -311,11 +312,80 @@ export default function ModelPerformance() {
               </div>
             ))}
           </div>
+
+          {/* Model Comparison Table */}
+          <div className="overflow-x-auto pt-2">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-900/80 text-slate-400 uppercase tracking-wider text-[11px] border-b border-slate-800">
+                <tr>
+                  <th className="p-2.5 font-semibold">Model Architecture</th>
+                  <th className="p-2.5 font-semibold text-center">Phishing F1</th>
+                  <th className="p-2.5 font-semibold text-center">Phishing Recall</th>
+                  <th className="p-2.5 font-semibold text-center">Accuracy</th>
+                  <th className="p-2.5 font-semibold text-center">ROC-AUC</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-mono">
+                {Object.entries(vc ?? {}).map(([name, entry]) => (
+                  <tr key={name} className="hover:bg-slate-900/40">
+                    <td className="p-2.5 font-sans font-medium text-slate-200">{name}</td>
+                    <td className="p-2.5 text-center text-red-400">{formatPercent(entry.phishing_f1 ?? entry.f1)}</td>
+                    <td className="p-2.5 text-center text-orange-400">{formatPercent(entry.phishing_recall ?? entry.recall)}</td>
+                    <td className="p-2.5 text-center text-blue-400">{formatPercent(entry.accuracy)}</td>
+                    <td className="p-2.5 text-center text-teal-400">{entry.roc_auc ? formatPercent(entry.roc_auc) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <p className="text-[11px] text-slate-500">
-            How to read: LightGBM achieves top Phishing F1 and recall while keeping false alarms low.
+            How to read this: Evaluates candidate models on identical 5-fold cross-validation splits. LightGBM balances high recall and F1 while keeping false alarms low.
           </p>
         </div>
       )}
+
+      {/* Diagnostic Curves: ROC and Calibration Plots */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="glass-card p-6 space-y-3">
+          <div className="section-title">
+            <TrendingUp size={18} className="text-cyan-400" />
+            Calibration Curve (Reliability Diagram)
+          </div>
+          <div className="rounded-xl overflow-hidden bg-slate-950/60 border border-slate-800/80 flex items-center justify-center p-2 min-h-[200px]">
+            <img
+              src="/api/reports/calibration_curve.png"
+              alt="Model Probability Calibration Curve"
+              className="max-h-64 w-auto object-contain rounded-lg"
+              onError={(e) => {
+                (e.target as HTMLElement).style.display = 'none';
+              }}
+            />
+          </div>
+          <p className="text-[11px] text-slate-500">
+            How to read this: A well-calibrated classifier produces predicted probabilities that correspond to empirical risk frequency. When the curve tracks the diagonal line, confidence values are well-calibrated.
+          </p>
+        </div>
+
+        <div className="glass-card p-6 space-y-3">
+          <div className="section-title">
+            <BarChart2 size={18} className="text-violet-400" />
+            ROC Curve (Receiver Operating Characteristic)
+          </div>
+          <div className="rounded-xl overflow-hidden bg-slate-950/60 border border-slate-800/80 flex items-center justify-center p-2 min-h-[200px]">
+            <img
+              src="/api/reports/roc_curve.png"
+              alt="Model ROC Curve"
+              className="max-h-64 w-auto object-contain rounded-lg"
+              onError={(e) => {
+                (e.target as HTMLElement).style.display = 'none';
+              }}
+            />
+          </div>
+          <p className="text-[11px] text-slate-500">
+            How to read this: Illustrates True Positive Rate vs False Positive Rate across all thresholds. A curve hugging the top-left corner indicates strong discriminatory power (ROC-AUC approaching 1.0).
+          </p>
+        </div>
+      </div>
 
       {/* Feature importances */}
       {fi.length > 0 && (

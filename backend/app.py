@@ -29,7 +29,7 @@ import logging
 import sys
 from pathlib import Path
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -433,6 +433,26 @@ def external_eval():
     except Exception:
         log.exception("Failed to load external evaluation results.")
         return _error("Failed to load external evaluation results.", 500)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# GET /api/reports/<filename>
+# ──────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/reports/<path:filename>", methods=["GET"])
+def get_report_file(filename: str):
+    """Serve static report figures (PNG/JSON)."""
+    safe_names = {
+        "roc_curve.png", "calibration_curve.png", "precision_recall_curve.png",
+        "confusion_matrix.png", "feature_importance.png", "model_comparison.png",
+        "reliability_curve.png", "external_eval.json", "error_analysis.json",
+    }
+    if filename not in safe_names:
+        return _error("Report file not found or unauthorized.", 404)
+    file_path = config.REPORTS_DIR / filename
+    if not file_path.exists():
+        return _error(f"Report asset '{filename}' does not exist.", 404)
+    return send_file(file_path)
 
 
 # ──────────────────────────────────────────────────────────────────────────

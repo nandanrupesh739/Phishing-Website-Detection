@@ -10,6 +10,7 @@ import type {
   ModelInfoResponse,
   ModelMetricsResponse,
   PredictionResult,
+  ExternalEvalResponse,
 } from '../types/api';
 
 const BASE = '/api';
@@ -103,6 +104,6 @@ export async function fetchModelInfo(): Promise<ModelInfoResponse> {
   return request<ModelInfoResponse>('/model-info');
 }
 
-export async function fetchExternalEval(): Promise<any> {
-  return request('/external-eval').catch(() => null);
+export async function fetchExternalEval(): Promise<ExternalEvalResponse | null> {
+  return request<ExternalEvalResponse>('/external-eval').catch(() => null);
 }

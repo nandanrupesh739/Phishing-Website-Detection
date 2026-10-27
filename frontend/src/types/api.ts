@@ -148,6 +148,34 @@ export interface ModelMetricsResponse {
   label_distribution?: Record<string, number>;
 }
 
+// ── External Evaluation ───────────────────────────────────────────────────
+
+export interface ExternalEvalResponse {
+  available: boolean;
+  message?: string;
+  evaluation_date?: string;
+  datasets?: {
+    phishing_file: string;
+    legit_file: string;
+    total_phishing_urls: number;
+    total_legit_urls: number;
+    total_samples: number;
+  };
+  metrics?: {
+    phishing_recall: number;
+    false_positive_rate: number;
+    precision: number;
+    accuracy: number;
+    f1_score: number;
+    confusion_matrix: {
+      true_positives: number;
+      false_positives: number;
+      true_negatives: number;
+      false_negatives: number;
+    };
+  };
+}
+
 // ── Model Info ────────────────────────────────────────────────────────────
 
 export interface ModelInfoResponse {
@@ -162,6 +190,10 @@ export interface ModelInfoResponse {
   label_distribution?: Record<string, number>;
   trained_at?: string;
   class_mapping?: Record<string, string>;
+  decision_threshold?: number;
+  target_phishing_recall?: number;
+  split_description?: string;
+  library_versions?: Record<string, string>;
 }
 
 // ── Generic API Error ─────────────────────────────────────────────────────

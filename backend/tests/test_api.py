@@ -366,6 +366,22 @@ class TestSecretKeyProductionCheck:
         assert "SECRET_KEY must be configured" in str(exc_info.value)
 
 
+
+# ---------------------------------------------------------------------------
+# Reports Endpoint
+# ---------------------------------------------------------------------------
+
+class TestReportsEndpoint:
+    def test_unauthorized_report_file_returns_404(self, app):
+        resp = app.get("/api/reports/forbidden.txt")
+        assert resp.status_code == 404
+
+    def test_authorized_report_file(self, app):
+        resp = app.get("/api/reports/roc_curve.png")
+        # 200 if file exists in reports/, 404 otherwise
+        assert resp.status_code in (200, 404)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

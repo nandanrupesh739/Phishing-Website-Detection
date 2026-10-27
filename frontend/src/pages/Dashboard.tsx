@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Shield, Scan, AlertTriangle, CheckCircle, Activity, TrendingUp, Clock } from 'lucide-react';
-import { fetchHealth, fetchHistory, fetchModelMetrics } from '../services/api';
-import type { HealthResponse, HistoryResponse, ModelMetricsResponse } from '../types/api';
+import { fetchHealth, fetchHistory, fetchModelMetrics, fetchExternalEval } from '../services/api';
+import type { HealthResponse, HistoryResponse, ModelMetricsResponse, ExternalEvalResponse } from '../types/api';
 import { LoadingSkeleton } from '../components/LoadingSkeleton';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
@@ -61,6 +61,7 @@ export default function Dashboard({ onNavigate }: Props) {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [historyData, setHistoryData] = useState<HistoryResponse | null>(null);
   const [metrics, setMetrics] = useState<ModelMetricsResponse | null>(null);
+  const [externalEval, setExternalEval] = useState<ExternalEvalResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,15 +69,17 @@ export default function Dashboard({ onNavigate }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const [h, hist, met] = await Promise.allSettled([
+      const [h, hist, met, ext] = await Promise.allSettled([
         fetchHealth(),
         fetchHistory(5),
         fetchModelMetrics(),
+        fetchExternalEval(),
       ]);
 
       if (h.status === 'fulfilled') setHealth(h.value);
       if (hist.status === 'fulfilled') setHistoryData(hist.value);
       if (met.status === 'fulfilled') setMetrics(met.value);
+      if (ext.status === 'fulfilled') setExternalEval(ext.value);
 
       if (h.status === 'rejected' && hist.status === 'rejected' && met.status === 'rejected') {
         const reason = h.reason instanceof Error ? h.reason.message : 'Backend server unreachable';
@@ -194,6 +197,57 @@ export default function Dashboard({ onNavigate }: Props) {
           </div>
         )}
       </div>
+
+      {/* External Evaluation Card (Out-of-Distribution Benchmark) */}
+      {externalEval?.available && externalEval.metrics && (
+        <div className="glass-card p-6 space-y-4" style={{ border: '1px solid rgba(139,92,246,0.3)', background: 'linear-gradient(135deg, rgba(139,92,246,0.06), rgba(59,130,246,0.04))' }}>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <div className="flex items-center gap-2 text-base font-bold text-white">
+                <Shield size={18} className="text-violet-400" />
+                External Benchmark Evaluation (Out-of-Distribution Test)
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Evaluated against real-world external feeds: <span className="font-mono text-slate-300">{externalEval.datasets?.phishing_file ?? 'phishing.txt'}</span> &amp; <span className="font-mono text-slate-300">{externalEval.datasets?.legit_file ?? 'legit.txt'}</span> ({formatNumber(externalEval.datasets?.total_samples)} total URLs)
+              </p>
+            </div>
+            <span className="text-[11px] px-2.5 py-1 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30 font-semibold">
+              Independent Benchmark
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+            <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+              <div className="text-[11px] text-slate-400">Phishing Recall</div>
+              <div className="text-xl font-bold text-amber-400 mt-0.5">
+                {formatPercent(externalEval.metrics.phishing_recall)}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5">Caught external phish</div>
+            </div>
+            <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+              <div className="text-[11px] text-slate-400">False Positive Rate</div>
+              <div className="text-xl font-bold text-sky-400 mt-0.5">
+                {formatPercent(externalEval.metrics.false_positive_rate)}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5">Legit false alarms</div>
+            </div>
+            <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+              <div className="text-[11px] text-slate-400">Precision</div>
+              <div className="text-xl font-bold text-emerald-400 mt-0.5">
+                {formatPercent(externalEval.metrics.precision)}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5">True positive ratio</div>
+            </div>
+            <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+              <div className="text-[11px] text-slate-400">F1-Score</div>
+              <div className="text-xl font-bold text-violet-400 mt-0.5">
+                {formatPercent(externalEval.metrics.f1_score)}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5">Harmonic mean</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Recent scans & Model performance summary */}
       <div className="grid lg:grid-cols-2 gap-6">

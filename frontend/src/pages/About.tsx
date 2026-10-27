@@ -1,24 +1,15 @@
+import { useState, useEffect } from 'react';
 import { Info, Shield, Code2, Database, GitBranch, AlertTriangle, Zap, ExternalLink } from 'lucide-react';
+import { fetchModelInfo, fetchModelMetrics } from '../services/api';
+import type { ModelInfoResponse, ModelMetricsResponse } from '../types/api';
+import { formatNumber, formatPercent } from '../utils/formatters';
 
 const TECH_STACK = [
   { category: 'Machine Learning', items: ['Python 3.11', 'Scikit-learn', 'Pandas', 'NumPy', 'Joblib'] },
   { category: 'Visualisation',    items: ['Matplotlib', 'Seaborn', 'Recharts (frontend)'] },
   { category: 'Backend',          items: ['Flask 3', 'Flask-CORS', 'SQLite', 'Python-dotenv'] },
   { category: 'Frontend',         items: ['React 18', 'Vite', 'TypeScript', 'Tailwind CSS 3', 'Lucide React'] },
-  { category: 'Testing',          items: ['Pytest', 'pytest-cov', 'Flask test client'] },
-];
-
-const FEATURES = [
-  'URL-string feature extraction (42 structural features + character n-gram TF-IDF, no network requests)',
-  'Multi-model evaluation: LightGBM, Logistic Regression, Random Forest, Naive Bayes',
-  '70/15/15 Domain-Grouped split by registered domain (zero train/val/test domain leakage)',
-  'Probability calibration via CalibratedClassifierCV with reliability curve and Brier score',
-  'Decision threshold tuned on validation set to achieve target 98% phishing recall',
-  'Single held-out test evaluation (touched once for final honest reporting)',
-  'Confusion matrix, ROC curve, reliability diagram, and feature importance reports',
-  'Local SQLite scan history with pagination and clear functionality',
-  'Responsive cybersecurity-themed dashboard with risk level indicators',
-  'Full REST API with rate limiting, input validation, and safe error handling',
+  { category: 'Testing',          items: ['Pytest', 'pytest-cov', 'Vitest', 'Testing Library'] },
 ];
 
 const LIMITATIONS = [
@@ -66,6 +57,54 @@ function BulletList({ items, color = '#60a5fa' }: { items: string[]; color?: str
 }
 
 export default function About() {
+  const [info, setInfo] = useState<ModelInfoResponse | null>(null);
+  const [metrics, setMetrics] = useState<ModelMetricsResponse | null>(null);
+
+  useEffect(() => {
+    Promise.all([
+      fetchModelInfo().catch(() => null),
+      fetchModelMetrics().catch(() => null),
+    ]).then(([infoRes, metricsRes]) => {
+      if (infoRes) setInfo(infoRes);
+      if (metricsRes) setMetrics(metricsRes);
+    });
+  }, []);
+
+  const featureCount = info?.feature_count ?? 42;
+  const datasetSize = info?.dataset_size ? formatNumber(info.dataset_size) : '235,795';
+  const targetRecallPct = info?.target_phishing_recall
+    ? `${(info.target_phishing_recall * 100).toFixed(0)}%`
+    : '98%';
+  const splitText = info?.split_description ?? '70/15/15 Domain-Grouped split by registered domain (zero train/val/test domain leakage)';
+  const accuracyStr = metrics?.test_metrics
+    ? formatPercent(metrics.test_metrics.accuracy ?? metrics.test_metrics.test_accuracy)
+    : '—';
+
+  const dynamicFeatures = [
+    `URL-string feature extraction (${featureCount} structural features + character n-gram TF-IDF, no network requests)`,
+    'Multi-model evaluation: LightGBM, Logistic Regression, Random Forest, Naive Bayes',
+    splitText,
+    'Probability calibration via CalibratedClassifierCV with reliability curve and Brier score',
+    `Decision threshold tuned on validation set to achieve target ${targetRecallPct} phishing recall`,
+    `Single held-out test evaluation (${accuracyStr !== '—' ? `${accuracyStr} test accuracy` : 'honest reporting on unseen domains'})`,
+    'Confusion matrix, ROC curve, reliability diagram, and feature importance reports',
+    'Local SQLite scan history with pagination and clear functionality',
+    'Responsive cybersecurity-themed dashboard with risk level indicators',
+    'Full REST API with rate limiting, input validation, and safe error handling',
+  ];
+
+  const workflowSteps = [
+    ['Load Dataset', `Detect URL and label columns; validate CSV structure (${datasetSize} samples) and compute fingerprint`],
+    ['Clean & Normalise', 'Remove missing values and duplicates; apply canonical normalisation across training & inference'],
+    ['Extract Features', `${featureCount} structural features via offline tldextract & regex + character n-gram TF-IDF (no network calls)`],
+    ['Domain-Grouped Split', splitText],
+    ['Train Candidates', 'Fit LightGBM, Logistic Regression, Random Forest, and Naive Bayes models with class weighting'],
+    ['Validation Selection', 'Compare models on validation set; calibrate winning model with CalibratedClassifierCV'],
+    ['Tune Threshold', `Select decision threshold on validation set to hit target ${targetRecallPct} recall and minimize false positives`],
+    ['Held-Out Test', `Evaluate best calibrated model exactly once on test set (${accuracyStr} accuracy); generate reliability curve and confusion matrix`],
+    ['Save Artefacts', 'Persist model bundle, metadata JSON, metrics contract, and visual report plots'],
+  ];
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Header */}
@@ -110,7 +149,7 @@ export default function About() {
 
       {/* Features */}
       <Section title="Key Features" icon={<Zap size={18} className="text-violet-400" />}>
-        <BulletList items={FEATURES} color="#a78bfa" />
+        <BulletList items={dynamicFeatures} color="#a78bfa" />
       </Section>
 
       {/* Tech stack */}
@@ -139,7 +178,12 @@ export default function About() {
             <div className="text-white font-semibold">PhiUSIIL Phishing URL Dataset</div>
             <div className="text-slate-400">UCI Machine Learning Repository</div>
             <div className="flex flex-wrap gap-3 text-xs">
-              {[['Records', '235,795'],['Features', '54'],['Label 0', 'Phishing'],['Label 1', 'Legitimate']].map(([k,v]) => (
+              {[
+                ['Records', datasetSize],
+                ['Features', formatNumber(featureCount)],
+                ['Test Accuracy', accuracyStr],
+                ['Target Recall', targetRecallPct],
+              ].map(([k, v]) => (
                 <div key={k} className="flex gap-1.5">
                   <span className="text-slate-500">{k}:</span>
                   <span className="text-slate-300 font-medium">{v}</span>
@@ -168,17 +212,7 @@ export default function About() {
       {/* ML workflow */}
       <Section title="Machine Learning Workflow" icon={<GitBranch size={18} className="text-violet-400" />}>
         <ol className="space-y-3">
-          {[
-            ['Load Dataset', 'Detect URL and label columns; validate CSV structure and calculate SHA-256 fingerprint'],
-            ['Clean & Normalise', 'Remove missing values and duplicates; apply canonical normalisation across training & inference'],
-            ['Extract Features', '42 structural features via offline tldextract & regex + character n-gram TF-IDF (no network calls)'],
-            ['Domain-Grouped Split', '70% train / 15% validation / 15% test partitioned by registered domain (zero leakage)'],
-            ['Train Candidates', 'Fit LightGBM, Logistic Regression, Random Forest, and Naive Bayes models with class weighting'],
-            ['Validation Selection', 'Compare models on validation set; calibrate winning model with CalibratedClassifierCV'],
-            ['Tune Threshold', 'Select decision threshold on validation set to hit target 98% recall and minimize false positives'],
-            ['Held-Out Test', 'Evaluate best calibrated model exactly once on test set; generate reliability curve and confusion matrix'],
-            ['Save Artefacts', 'Persist model bundle, metadata JSON, metrics contract, and visual report plots'],
-          ].map(([step, desc], i) => (
+          {workflowSteps.map(([step, desc], i) => (
             <li key={step} className="flex items-start gap-3">
               <div className="w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center shrink-0 mt-0.5"
                 style={{ background: 'rgba(139,92,246,0.2)', color: '#a78bfa', border: '1px solid rgba(139,92,246,0.3)' }}>
