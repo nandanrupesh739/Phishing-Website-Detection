@@ -18,16 +18,39 @@ async function request<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
-    ...options,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
+      ...options,
+    });
+  } catch (err: unknown) {
+    const rawMsg = err instanceof Error ? err.message : 'Network connection failure';
+    throw new Error(`Backend not reachable (${rawMsg}). Start it with python -m backend.app`);
+  }
 
-  const json = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
+  const json = await res.json().catch(() => ({ error: 'Invalid JSON response from server' }));
 
   if (!res.ok) {
-    const msg = (json as { error?: string }).error ?? `HTTP ${res.status}`;
-    throw new Error(msg);
+    let msg = (json as { error?: string }).error;
+    if (!msg) {
+      if (res.status === 429) {
+        msg = 'Rate limit exceeded (too many requests). Please wait a moment before trying again.';
+      } else if (res.status === 413) {
+        msg = 'Request payload too large. Please reduce the size or count of submitted URLs.';
+      } else if (res.status === 503) {
+        msg = 'Backend service is currently unavailable or the model is loading. Start it with python -m backend.app';
+      } else {
+        msg = `HTTP ${res.status}: ${res.statusText || 'Request failed'}`;
+      }
+    } else {
+      if (res.status === 429) {
+        msg = `Rate limit reached: ${msg}. Please wait before making more requests.`;
+      }
+    }
+    const error = new Error(msg);
+    (error as Error & { status: number }).status = res.status;
+    throw error;
   }
 
   return json as T;
@@ -64,8 +87,11 @@ export async function fetchHistory(
   return request<HistoryResponse>(`/history?limit=${limit}&offset=${offset}`);
 }
 
-export async function clearHistory(): Promise<{ message: string; deleted_count: number }> {
-  return request(`/history`, { method: 'DELETE' });
+export async function clearHistory(apiKey?: string): Promise<{ message: string; deleted_count: number }> {
+  return request(`/history`, {
+    method: 'DELETE',
+    headers: apiKey ? { 'x-api-key': apiKey } : {},
+  });
 }
 
 // ── Model ─────────────────────────────────────────────────────────────────
@@ -75,4 +101,8 @@ export async function fetchModelMetrics(): Promise<ModelMetricsResponse> {
 
 export async function fetchModelInfo(): Promise<ModelInfoResponse> {
   return request<ModelInfoResponse>('/model-info');
+}
+
+export async function fetchExternalEval(): Promise<any> {
+  return request('/external-eval').catch(() => null);
 }

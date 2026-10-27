@@ -2,8 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { Shield, Scan, AlertTriangle, CheckCircle, Activity, TrendingUp, Clock } from 'lucide-react';
 import { fetchHealth, fetchHistory, fetchModelMetrics } from '../services/api';
 import type { HealthResponse, HistoryResponse, ModelMetricsResponse } from '../types/api';
+import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { ErrorState } from '../components/ErrorState';
+import { EmptyState } from '../components/EmptyState';
+import { formatPercent, formatNumber } from '../utils/formatters';
 
-type Page = 'dashboard' | 'scanner' | 'history' | 'performance' | 'about';
+type Page = 'dashboard' | 'scanner' | 'batch' | 'history' | 'performance' | 'about';
 
 interface Props {
   onNavigate: (p: Page) => void;
@@ -23,7 +27,7 @@ function StatCard({
       <div className="flex-1 min-w-0">
         <div className="text-2xl font-bold text-white">{value}</div>
         <div className="text-sm text-slate-400 mt-0.5">{label}</div>
-        {sub && <div className="text-xs text-slate-600 mt-1">{sub}</div>}
+        {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
       </div>
     </div>
   );
@@ -42,7 +46,8 @@ function RecentScanRow({ scan }: { scan: { submitted_url: string; prediction: st
         }
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-mono text-slate-200 truncate">{scan.submitted_url}</div>
+        {/* Monospace plain text URL - NEVER a clickable link */}
+        <div className="text-sm font-mono text-slate-200 truncate select-all">{scan.submitted_url}</div>
         <div className="text-xs text-slate-500 mt-0.5">{ts}</div>
       </div>
       <div className={`shrink-0 ${isPhishing ? 'badge-threat' : 'badge-safe'}`}>
@@ -57,24 +62,49 @@ export default function Dashboard({ onNavigate }: Props) {
   const [historyData, setHistoryData] = useState<HistoryResponse | null>(null);
   const [metrics, setMetrics] = useState<ModelMetricsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [h, hist, met] = await Promise.allSettled([
-      fetchHealth(),
-      fetchHistory(5),
-      fetchModelMetrics(),
-    ]);
-    if (h.status === 'fulfilled') setHealth(h.value);
-    if (hist.status === 'fulfilled') setHistoryData(hist.value);
-    if (met.status === 'fulfilled') setMetrics(met.value);
-    setLoading(false);
+    setError(null);
+    try {
+      const [h, hist, met] = await Promise.allSettled([
+        fetchHealth(),
+        fetchHistory(5),
+        fetchModelMetrics(),
+      ]);
+
+      if (h.status === 'fulfilled') setHealth(h.value);
+      if (hist.status === 'fulfilled') setHistoryData(hist.value);
+      if (met.status === 'fulfilled') setMetrics(met.value);
+
+      if (h.status === 'rejected' && hist.status === 'rejected' && met.status === 'rejected') {
+        const reason = h.reason instanceof Error ? h.reason.message : 'Backend server unreachable';
+        setError(reason);
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
   const stats = historyData?.stats;
   const tm = metrics?.test_metrics;
+
+  if (error && !health && !metrics) {
+    return (
+      <div className="max-w-3xl mx-auto py-8">
+        <ErrorState
+          title="Unable to connect to PhishGuard Backend"
+          message={error}
+          onRetry={load}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
@@ -109,45 +139,63 @@ export default function Dashboard({ onNavigate }: Props) {
           <div className="text-lg font-semibold text-white">Analyze a URL Now</div>
           <div className="text-slate-400 text-sm mt-1">Paste any URL to instantly check for phishing indicators</div>
         </div>
-        <button
-          id="goto-scanner-btn"
-          onClick={() => onNavigate('scanner')}
-          className="btn-primary shrink-0"
-        >
-          <Scan size={18} />
-          Open Scanner
-        </button>
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            id="goto-scanner-btn"
+            onClick={() => onNavigate('scanner')}
+            className="btn-primary"
+          >
+            <Scan size={18} />
+            Open Scanner
+          </button>
+          <button
+            onClick={() => onNavigate('batch')}
+            className="btn-ghost border border-slate-700/60"
+          >
+            Batch Scan
+          </button>
+        </div>
       </div>
 
       {/* Scan statistics */}
       <div>
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">Scan Statistics</h2>
-        {loading ? (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {[0,1,2,3].map(i => (
-              <div key={i} className="glass-card p-5 h-24 animate-pulse" style={{ background: 'rgba(10,21,53,0.6)' }} />
-            ))}
-          </div>
+        {loading && !stats && !tm ? (
+          <LoadingSkeleton type="card" count={4} />
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard icon={<Activity size={20} />} label="Total Scans" value={stats?.total ?? 0} color="#3b82f6" />
-            <StatCard icon={<AlertTriangle size={20} />} label="Phishing Found" value={stats?.phishing_count ?? 0} color="#ef4444" sub="High/Critical risk" />
-            <StatCard icon={<CheckCircle size={20} />} label="Safe Found" value={stats?.legitimate_count ?? 0} color="#10b981" sub="Low risk (Safe)" />
+            <StatCard
+              icon={<Activity size={20} />}
+              label="Total Scans"
+              value={formatNumber(stats?.total ?? 0)}
+              color="#3b82f6"
+            />
+            <StatCard
+              icon={<AlertTriangle size={20} />}
+              label="Phishing Found"
+              value={formatNumber(stats?.phishing_count ?? 0)}
+              color="#ef4444"
+              sub="High/Critical risk"
+            />
+            <StatCard
+              icon={<CheckCircle size={20} />}
+              label="Safe Found"
+              value={formatNumber(stats?.legitimate_count ?? 0)}
+              color="#10b981"
+              sub="Low risk (Safe)"
+            />
             <StatCard
               icon={<TrendingUp size={20} />}
               label="Model Accuracy"
-              value={(() => {
-                const acc = tm?.accuracy ?? tm?.test_accuracy;
-                return typeof acc === 'number' && !isNaN(acc) ? `${(acc * 100).toFixed(1)}%` : '—';
-              })()}
+              value={formatPercent(tm?.accuracy ?? tm?.test_accuracy)}
               color="#8b5cf6"
-              sub={tm ? 'Test set' : 'Train first'}
+              sub={tm ? 'Test set, domain-grouped split' : 'Train first'}
             />
           </div>
         )}
       </div>
 
-      {/* Recent scans */}
+      {/* Recent scans & Model performance summary */}
       <div className="grid lg:grid-cols-2 gap-6">
         <div className="glass-card overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-blue-900/20">
@@ -162,19 +210,25 @@ export default function Dashboard({ onNavigate }: Props) {
               View all →
             </button>
           </div>
-          {loading ? (
-            <div className="p-5 text-center text-slate-500 text-sm">Loading…</div>
+          {loading && !historyData ? (
+            <div className="p-5">
+              <LoadingSkeleton type="lines" count={4} />
+            </div>
           ) : historyData?.records?.length ? (
             <div>
               {historyData.records.map(r => <RecentScanRow key={r.id} scan={r} />)}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center p-10 text-center gap-3">
-              <Shield size={32} className="text-slate-700" />
-              <div className="text-slate-500 text-sm">No scans yet</div>
-              <button onClick={() => onNavigate('scanner')} className="text-xs text-blue-400 hover:underline">
-                Scan your first URL
-              </button>
+            <div className="p-6">
+              <EmptyState
+                icon={<Shield size={28} className="text-slate-600" />}
+                title="No scans yet"
+                description="Scan history is clean. Analyze a URL to view real-time threat intelligence."
+                action={{
+                  label: 'Scan your first URL',
+                  onClick: () => onNavigate('scanner')
+                }}
+              />
             </div>
           )}
         </div>
@@ -193,7 +247,11 @@ export default function Dashboard({ onNavigate }: Props) {
               Full report →
             </button>
           </div>
-          {tm ? (
+          {loading && !tm ? (
+            <div className="p-5">
+              <LoadingSkeleton type="lines" count={4} />
+            </div>
+          ) : tm ? (
             <div className="p-5 space-y-3">
               {([
                 ['Test Accuracy',      tm.accuracy ?? tm.test_accuracy,       '#3b82f6'],
@@ -202,7 +260,7 @@ export default function Dashboard({ onNavigate }: Props) {
                 ['Macro F1-Score',     tm.macro_f1 ?? tm.f1 ?? tm.phishing_f1, '#8b5cf6'],
               ] as [string, number | undefined, string][]).map(([label, val, color]) => {
                 const isValid = typeof val === 'number' && !isNaN(val);
-                const pct = isValid ? `${(val * 100).toFixed(1)}%` : '—';
+                const pct = formatPercent(val);
                 return (
                   <div key={label}>
                     <div className="flex justify-between text-xs mb-1">
@@ -212,18 +270,23 @@ export default function Dashboard({ onNavigate }: Props) {
                     <div className="h-1.5 rounded-full bg-slate-800">
                       {isValid && (
                         <div className="h-full rounded-full transition-all duration-700"
-                          style={{ width: `${Math.min(Math.max(val * 100, 0), 100)}%`, background: color }} />
+                          style={{ width: `${Math.min(Math.max((val ?? 0) * 100, 0), 100)}%`, background: color }} />
                       )}
                     </div>
                   </div>
                 );
               })}
+              <div className="text-[11px] text-slate-500 text-right pt-1">
+                Split: Test set, domain-grouped split
+              </div>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center p-10 gap-3 text-center">
-              <TrendingUp size={32} className="text-slate-700" />
-              <div className="text-slate-500 text-sm">No metrics available</div>
-              <div className="text-xs text-slate-600">Train the model to see evaluation results</div>
+            <div className="p-6">
+              <EmptyState
+                icon={<TrendingUp size={28} className="text-slate-600" />}
+                title="No metrics available"
+                description="Train the model to inspect evaluation scores, ROC curve, and confusion matrix."
+              />
             </div>
           )}
         </div>

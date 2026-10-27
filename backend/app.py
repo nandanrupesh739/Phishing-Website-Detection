@@ -24,6 +24,7 @@ Security notes
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from pathlib import Path
@@ -409,6 +410,29 @@ def model_info():
         "split_description", "library_versions",
     ]
     return jsonify({k: meta[k] for k in safe_fields if k in meta}), 200
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# GET /api/external-eval
+# ──────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/external-eval", methods=["GET"])
+def external_eval():
+    """Return saved external benchmark evaluation metrics if available."""
+    eval_file = config.REPORTS_DIR / "external_eval.json"
+    if not eval_file.exists():
+        return jsonify({
+            "available": False,
+            "message": "External benchmark evaluation not yet run. Run 'python scripts/external_eval.py'.",
+        }), 200
+    try:
+        with open(eval_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data["available"] = True
+        return jsonify(data), 200
+    except Exception:
+        log.exception("Failed to load external evaluation results.")
+        return _error("Failed to load external evaluation results.", 500)
 
 
 # ──────────────────────────────────────────────────────────────────────────

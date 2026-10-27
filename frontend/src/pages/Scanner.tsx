@@ -260,7 +260,12 @@ function FeatureTable({ features }: { features: Record<string, number> }) {
   );
 }
 
-export default function Scanner() {
+export interface ScannerProps {
+  initialTab?: 'single' | 'batch';
+  onSwitchTab?: (tab: 'single' | 'batch') => void;
+}
+
+export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerProps = {}) {
   const [url, setUrl] = useState('');
   const [anonymize, setAnonymize] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -271,7 +276,7 @@ export default function Scanner() {
   const [showFeatures, setShowFeatures] = useState(false);
 
   // Batch scanner state
-  const [showBatch, setShowBatch] = useState(false);
+  const [showBatch, setShowBatch] = useState(initialTab === 'batch');
   const [batchInput, setBatchInput] = useState('');
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchResult, setBatchResult] = useState<BatchPredictionResponse | null>(null);
@@ -407,7 +412,11 @@ export default function Scanner() {
           </p>
         </div>
         <button
-          onClick={() => setShowBatch(b => !b)}
+          onClick={() => {
+            const next = !showBatch;
+            setShowBatch(next);
+            onSwitchTab?.(next ? 'batch' : 'single');
+          }}
           className="btn-ghost self-start sm:self-auto text-xs flex items-center gap-1.5 border border-slate-700/60"
         >
           <FileSpreadsheet size={15} className="text-teal-400" />
