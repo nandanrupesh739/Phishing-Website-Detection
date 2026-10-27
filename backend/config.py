@@ -247,6 +247,8 @@ SUSPICIOUS_TLDS = {
 LONG_HOSTNAME_THRESHOLD = 50
 
 # ──────────────────────────────────────────────
-# Model version tag (updated each training run)
+# Version tags (APP_VERSION for application release, MODEL_VERSION for model artefact)
 # ──────────────────────────────────────────────
+APP_VERSION = "1.1.0"
 MODEL_VERSION = "1.0.0"
+

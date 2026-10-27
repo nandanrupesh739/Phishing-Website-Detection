@@ -146,6 +146,7 @@ def health():
     return jsonify(
         {
             "status": "ok",
+            "app_version": config.APP_VERSION,
             "model_available": model_ready,
             "model_name": meta.get("model_name"),
             "model_version": meta.get("model_version"),
