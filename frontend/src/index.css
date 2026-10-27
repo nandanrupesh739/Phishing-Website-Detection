@@ -24,6 +24,67 @@
   --color-medium: #f59e0b;
 }
 
+[data-theme="light"] {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #f1f5f9;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8fafc;
+  --border-subtle: rgba(148, 163, 184, 0.35);
+  --border-medium: rgba(59, 130, 246, 0.35);
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --accent-blue: #2563eb;
+  --accent-violet: #7c3aed;
+  --accent-teal: #0891b2;
+}
+
+[data-theme="light"] .glass-card {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(203, 213, 225, 0.8);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .glass-card-hover:hover {
+  background: #ffffff;
+  border-color: rgba(59, 130, 246, 0.4);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] aside {
+  background: rgba(248, 250, 252, 0.98) !important;
+  border-right-color: rgba(203, 213, 225, 0.8) !important;
+}
+
+[data-theme="light"] header {
+  background: rgba(248, 250, 252, 0.98) !important;
+  border-bottom-color: rgba(203, 213, 225, 0.8) !important;
+}
+
+[data-theme="light"] .input-cyber {
+  background: #ffffff;
+  color: #0f172a;
+  border-color: rgba(203, 213, 225, 0.8);
+}
+
+[data-theme="light"] .text-white {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .text-slate-200,
+[data-theme="light"] .text-slate-300 {
+  color: #334155 !important;
+}
+
+[data-theme="light"] .text-slate-400 {
+  color: #475569 !important;
+}
+
+[data-theme="light"] .bg-grid {
+  background-image: linear-gradient(rgba(59, 130, 246, 0.05) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(59, 130, 246, 0.05) 1px, transparent 1px);
+}
+
 /* ── Base reset ─────────────────────────────────────────────────────────── */
 * {
   box-sizing: border-box;

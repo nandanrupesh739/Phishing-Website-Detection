@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import {
   Shield, Scan, History, BarChart2, Info, AlertTriangle,
-  CheckCircle, Wifi, WifiOff, Menu, X, FileSpreadsheet
+  CheckCircle, Wifi, WifiOff, Menu, X, FileSpreadsheet,
+  Sun, Moon
 } from 'lucide-react';
 import { fetchHealth } from './services/api';
 import type { HealthResponse } from './types/api';
@@ -28,6 +29,30 @@ export default function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = localStorage.getItem('phishguard_theme');
+      if (saved === 'light' || saved === 'dark') return saved;
+      return typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
+        ? 'light'
+        : 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('phishguard_theme', theme);
+    } catch {
+      // ignore
+    }
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev: 'light' | 'dark') => (prev === 'light' ? 'dark' : 'light'));
+  };
 
   const checkHealth = () => {
     fetchHealth()
@@ -194,9 +219,19 @@ export default function App() {
           </div>
         </div>
 
-        {/* Version */}
-        <div className="px-4 pb-4 text-center">
-          <span className="text-xs text-slate-600">v2.0.0 — Educational use only</span>
+        {/* Theme Toggle & Version */}
+        <div className="px-4 pb-4 flex items-center justify-between text-xs text-slate-500">
+          <span className="font-mono text-[11px]">v2.0.0</span>
+          <button
+            id="theme-toggle-btn"
+            onClick={toggleTheme}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-slate-800 hover:border-slate-700 bg-slate-900/40 text-slate-400 hover:text-white transition-colors"
+            aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+          >
+            {theme === 'light' ? <Moon size={13} className="text-violet-400" /> : <Sun size={13} className="text-amber-400" />}
+            <span className="capitalize text-[11px] font-medium">{theme === 'light' ? 'Dark' : 'Light'}</span>
+          </button>
         </div>
       </aside>
 
@@ -222,7 +257,14 @@ export default function App() {
               title={statusLabel}
             />
           </div>
-          <div className="w-8" />
+          <button
+            id="mobile-theme-toggle-btn"
+            onClick={toggleTheme}
+            className="p-1.5 rounded-lg border border-slate-800 text-slate-400 hover:text-white"
+            aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+          >
+            {theme === 'light' ? <Moon size={16} className="text-violet-400" /> : <Sun size={16} className="text-amber-400" />}
+          </button>
         </header>
 
         {/* Page content with ErrorBoundary wrapping each page (Phase 5.1 requirement) */}
