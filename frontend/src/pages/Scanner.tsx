@@ -5,6 +5,9 @@ import {
   FileSpreadsheet, Upload, Download, RefreshCw, HelpCircle,
   EyeOff
 } from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
+} from 'recharts';
 import { predictUrl, predictBatch } from '../services/api';
 import type { PredictionResult, BatchPredictionResponse } from '../types/api';
 
@@ -60,171 +63,130 @@ function ScoreBar({
   );
 }
 
-function ExplanationSection({ result }: { result: PredictionResult }) {
-  const [open, setOpen] = useState(false);
+export function ExplanationSection({ result }: { result: PredictionResult }) {
+  const [open, setOpen] = useState(true);
 
-  // Compute top contributing features based on non-zero weights and known suspicious flags
-  const feat = result.features || {};
-  const highlights: { name: string; value: number; explanation: string; impact: 'phish' | 'safe' }[] = [];
+  // Top 5 contributing features from backend explanation field (or fallback to feature_contributions)
+  const contributions = (result.explanation && result.explanation.length > 0)
+    ? result.explanation.slice(0, 5)
+    : (result.feature_contributions ? result.feature_contributions.slice(0, 5) : []);
 
-  if (feat.has_brand_impersonation) {
-    highlights.push({
-      name: 'Brand Impersonation',
-      value: 1,
-      explanation: 'Target brand name appeared in subdomain, path, or query outside the registered domain.',
-      impact: 'phish',
-    });
-  }
-  if (feat.has_suspicious_tld) {
-    highlights.push({
-      name: 'High-Risk TLD',
-      value: 1,
-      explanation: 'Uses a top-level domain frequently abused in mass phishing campaigns.',
-      impact: 'phish',
-    });
-  }
-  if (feat.has_ip_hostname) {
-    highlights.push({
-      name: 'IP Address Literal',
-      value: 1,
-      explanation: 'URL directly points to a raw IP address instead of a standard domain.',
-      impact: 'phish',
-    });
-  }
-  if (feat.is_url_shortener) {
-    highlights.push({
-      name: 'URL Shortener',
-      value: 1,
-      explanation: 'Shortener masks destination host and parameters.',
-      impact: 'phish',
-    });
-  }
-  if ((feat.num_subdomains ?? 0) >= 2) {
-    highlights.push({
-      name: 'Deep Subdomain Tree',
-      value: feat.num_subdomains,
-      explanation: `${feat.num_subdomains} subdomain levels detected, commonly used in domain spoofing.`,
-      impact: 'phish',
-    });
-  }
-  if ((feat.hostname_entropy ?? 0) > 3.6) {
-    highlights.push({
-      name: 'High Hostname Entropy',
-      value: feat.hostname_entropy,
-      explanation: `Entropy of ${feat.hostname_entropy.toFixed(2)} bits/char suggests random generation (DGA).`,
-      impact: 'phish',
-    });
-  }
-  if (feat.has_double_extension) {
-    highlights.push({
-      name: 'Double File Extension',
-      value: 1,
-      explanation: 'URL contains consecutive extensions (e.g. .php.html or .pdf.exe) to disguise file payload.',
-      impact: 'phish',
-    });
-  }
-  if (feat.has_suspicious_terms) {
-    highlights.push({
-      name: 'Sensitive Keywords',
-      value: 1,
-      explanation: 'Found sensitive security/banking terms in path or query parameters.',
-      impact: 'phish',
-    });
-  }
+  const chartData = contributions.map(c => ({
+    feature: c.feature.length > 22 ? c.feature.slice(0, 20) + '…' : c.feature,
+    rawFeature: c.feature,
+    contribution: c.contribution,
+    direction: c.direction,
+  }));
 
-  const contributions = result.feature_contributions || [];
+  const indicators = result.indicators || [];
 
   return (
-    <div className="glass-card overflow-hidden">
+    <div className="glass-card overflow-hidden" data-testid="why-this-result-panel">
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-5 py-3.5 text-sm font-medium text-slate-300 hover:text-white transition-colors"
+        className="w-full flex items-center justify-between px-5 py-4 text-sm font-semibold text-white hover:text-blue-300 transition-colors"
         aria-expanded={open}
       >
         <div className="flex items-center gap-2">
-          <HelpCircle size={16} className="text-teal-400" />
-          <span>Explain this Result (Model SHAP Contributions & Rules)</span>
+          <HelpCircle size={17} className="text-teal-400" />
+          <span>Why this result? (Model Attribution & Indicators)</span>
         </div>
         {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
       </button>
 
       {open && (
         <div className="px-5 pb-5 border-t border-slate-800 space-y-4 pt-4">
-          {/* SHAP Tree Feature Contributions */}
-          {contributions.length > 0 && (
+          {/* Transparency Disclaimer Banner */}
+          <div className="p-3 rounded-lg bg-blue-950/30 border border-blue-500/25 text-xs text-slate-300 flex items-start gap-2.5">
+            <Info size={15} className="text-blue-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold text-white">Model Behaviour Explanation: </span>
+              This panel visualizes the internal features that contributed most heavily to the model's prediction score.
+              This represents an explanation of the machine learning model's behaviour, not legal or definitive forensic proof.
+            </div>
+          </div>
+
+          {/* Top 5 Feature Contributions Recharts Horizontal Bar Chart */}
+          {chartData.length > 0 ? (
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-200">
-                  Top Contributing Model Features (TreeSHAP Attributions):
-                </span>
-                <span className="text-[11px] text-slate-400">
-                  (Positive = Push Phishing, Negative = Push Safe)
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-200">
+                <span>Top Contributing Features:</span>
+                <span className="text-[11px] text-slate-400 font-normal">
+                  (Positive = pushes toward PHISHING, Negative = pushes toward SAFE)
                 </span>
               </div>
-              <div className="space-y-1.5">
-                {contributions.map((c, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between p-2.5 rounded-lg bg-slate-900/70 border border-slate-800 text-xs"
+
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                <ResponsiveContainer width="100%" height={Math.max(160, chartData.length * 36)}>
+                  <BarChart
+                    layout="vertical"
+                    data={chartData}
+                    margin={{ left: 10, right: 30, top: 8, bottom: 8 }}
                   >
-                    <span className="font-mono text-slate-300">{c.feature}</span>
-                    <div className="flex items-center gap-2">
-                      <span className={`font-mono font-semibold ${c.direction === 'PHISHING' ? 'text-red-400' : 'text-emerald-400'}`}>
-                        {c.contribution > 0 ? `+${c.contribution.toFixed(4)}` : c.contribution.toFixed(4)}
-                      </span>
-                      <span
-                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
-                          c.direction === 'PHISHING' ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'
-                        }`}
-                      >
-                        {c.direction}
-                      </span>
-                    </div>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(59,130,246,0.1)" />
+                    <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                    <YAxis type="category" dataKey="feature" width={140} tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{
+                        background: 'rgba(10,21,53,0.95)',
+                        border: '1px solid rgba(59,130,246,0.3)',
+                        borderRadius: 8,
+                        color: '#f1f5f9',
+                        fontSize: 12,
+                      }}
+                      formatter={(val: number, _name: string, props: any) => {
+                        const dir = props?.payload?.direction;
+                        const sign = val > 0 ? `+${val.toFixed(4)}` : val.toFixed(4);
+                        return [`${sign} (${dir === 'PHISHING' ? 'Toward Phishing' : 'Toward Safe'})`, 'Contribution'];
+                      }}
+                    />
+                    <Bar dataKey="contribution" radius={[0, 4, 4, 0]}>
+                      {chartData.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={entry.direction === 'PHISHING' ? '#ef4444' : '#10b981'}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-900 mt-2 px-1">
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1.5 text-red-300">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-red-500" /> Toward PHISHING
+                    </span>
+                    <span className="flex items-center gap-1.5 text-emerald-300">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Toward SAFE
+                    </span>
                   </div>
-                ))}
+                  <span className="font-mono text-slate-500">TreeSHAP Local Attribution</span>
+                </div>
               </div>
+            </div>
+          ) : (
+            <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-800 text-xs text-slate-400 text-center">
+              No feature attribution data available for this prediction.
             </div>
           )}
 
-          {/* Heuristic / Rule Highlights */}
-          <div className="space-y-2">
-            <span className="text-xs font-semibold text-slate-200">
-              Heuristic Risk Pattern Flags:
-            </span>
-            {highlights.length > 0 ? (
-              <div className="space-y-2">
-                {highlights.map((h, i) => (
-                  <div
-                    key={i}
-                    className="p-3 rounded-lg text-xs space-y-1"
-                    style={{
-                      background: h.impact === 'phish' ? 'rgba(239,68,68,0.06)' : 'rgba(16,185,129,0.06)',
-                      border: `1px solid ${h.impact === 'phish' ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)'}`,
-                    }}
-                  >
-                    <div className="flex justify-between items-center">
-                      <span className="font-semibold text-white">{h.name}</span>
-                      <span
-                        className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase"
-                        style={{
-                          color: h.impact === 'phish' ? '#f87171' : '#34d399',
-                          background: h.impact === 'phish' ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)',
-                        }}
-                      >
-                        {h.impact === 'phish' ? 'Phishing Factor' : 'Safe Factor'}
-                      </span>
-                    </div>
-                    <p className="text-slate-300">{h.explanation}</p>
-                  </div>
+          {/* Observed Human-Readable Indicators */}
+          {indicators.length > 0 && (
+            <div className="space-y-2 pt-1">
+              <div className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                <AlertTriangle size={14} className="text-amber-400" />
+                <span>Observed Heuristic Indicators ({indicators.length})</span>
+              </div>
+              <ul className="space-y-1.5">
+                {indicators.map((ind, i) => (
+                  <li key={i} className="flex items-start gap-2 p-2 rounded-lg bg-slate-900/40 border border-slate-800/60 text-xs text-amber-200">
+                    <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 bg-amber-400" />
+                    <span>{ind}</span>
+                  </li>
                 ))}
-              </div>
-            ) : (
-              <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-xs text-slate-300">
-                <span className="text-emerald-400 font-semibold">Clean Structure: </span>
-                No high-risk structural anomalies (IP hostname, brand spoofing, suspicious TLDs, or high entropy) were detected.
-              </div>
-            )}
-          </div>
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>
