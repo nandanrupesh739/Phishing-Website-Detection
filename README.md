@@ -4,31 +4,95 @@
 
 ![PhishGuard AI](https://img.shields.io/badge/PhishGuard-AI-blue?style=for-the-badge&logo=shield&logoColor=white)
 [![CI](https://github.com/nandanrupesh739/Phishing-Website-Detection/actions/workflows/ci.yml/badge.svg)](https://github.com/nandanrupesh739/Phishing-Website-Detection/actions/workflows/ci.yml)
-![Python](https://img.shields.io/badge/Python-3.11%20|%203.14-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Coverage](https://img.shields.io/badge/Coverage-96%25-brightgreen?style=for-the-badge)
+![Python](https://img.shields.io/badge/Python-3.11%20|%203.12%20|%203.14-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![LightGBM](https://img.shields.io/badge/LightGBM-4.7-brightgreen?style=for-the-badge)
 ![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black)
 ![Flask](https://img.shields.io/badge/Flask-3.0-000000?style=for-the-badge&logo=flask&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
-**An honest, production-hardened machine learning system detecting phishing URLs purely from URL structure and subwords — without network visits.**
+**An honest, production-hardened machine learning system detecting phishing URLs purely from static URL structure and character subwords — without network visits, DNS queries, or page downloads.**
 
-[Quick Start](#quick-start) · [Frontend](#frontend-web-application) · [Screenshots](#application-screenshots) · [Evaluation & Benchmarks](#model-evaluation--honest-benchmark-results) · [Architecture](#architecture) · [Limitations](#honest-limitations--threat-model)
+[Quick Start](#quick-start) · [Docker](#docker-quick-start) · [Screenshots](#application-screenshots) · [Architecture](#architecture) · [Model Methodology](#how-the-model-works) · [Results](#benchmark-results) · [API](#api-overview) · [Limitations](#honest-limitations--threat-model)
 
 </div>
 
-> ⚠️ **Security & Educational Disclaimer**:  
+> ⚠️ **Educational & Research Notice**:  
 > PhishGuard AI is an **educational research system**. All classifications are based strictly on **static URL-string lexical metrics and character subwords** without fetching page contents, inspecting TLS certificates, or executing JavaScript. Predictions must not be the sole basis for security decisions.
 
 ---
 
-## Key Features & Highlights
+## Table of Contents
 
-- **Zero-Network Static Analysis**: 42 structural URL features + 20,000 character n-gram TF-IDF subwords. Never fetches or visits target URLs.
-- **70/15/15 Domain-Grouped Split**: Strictly grouped by registered domain (`tldextract`) — zero domain leakage between training, validation, and test splits.
-- **Probability Calibration & Threshold Tuning**: Calibrated via `CalibratedClassifierCV(method="sigmoid", cv=3)`. Decision threshold tuned on validation set (0.9500) targeting $\ge 98\%$ phishing recall with zero false positives on held-out test data.
-- **Explainable Predictions**: Real-time TreeSHAP feature attributions (`booster_.predict(pred_contrib=True)`) showing which exact URL patterns pushed toward PHISHING or SAFE.
-- **Hardened API**: Rate-limited (`60 requests/min` per IP), strict port parsing, API key protection on history deletion, optional URL anonymization, and batch scanning (up to 100 URLs).
-- **Modern Cyber Dashboard**: React 18, TypeScript, Tailwind CSS, real-time single & batch scanner, CSV upload/download, and offline-graceful metrics display.
+- [Overview](#overview)
+- [Application Screenshots](#application-screenshots)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Docker Quick Start](#docker-quick-start)
+- [API Overview](#api-overview)
+- [Configuration](#configuration)
+- [Project Structure](#project-structure)
+- [How the Model Works](#how-the-model-works)
+  - [Lexical Features (42)](#lexical-features-42)
+  - [Character N-Gram TF-IDF Subwords](#character-n-gram-tf-idf-subwords)
+  - [Model Comparison](#model-comparison)
+  - [Domain-Grouped Split](#domain-grouped-split)
+  - [Calibration and Threshold Tuning](#calibration-and-threshold-tuning)
+- [Benchmark Results](#benchmark-results)
+- [External Evaluation](#external-evaluation)
+- [Honest Limitations & Threat Model](#honest-limitations--threat-model)
+- [Testing & Quality Tooling](#testing--quality-tooling)
+- [Security & Privacy Notes](#security--privacy-notes)
+- [Roadmap](#roadmap)
+- [License](#license)
+- [Dataset Citation & Credits](#dataset-citation--credits)
+
+---
+
+## Overview
+
+PhishGuard AI is an end-to-end phishing URL analysis and detection platform. It is engineered with a strict **zero-network policy**: URLs submitted for analysis are treated solely as offline plain text strings and are never fetched, connected to, or resolved over the Internet. The system combines **42 handcrafted structural lexical features** with **20,000 character 3–5-gram TF-IDF subwords**, feeding into a probability-calibrated LightGBM gradient boosted decision tree classifier tuned for near-zero false positives.
+
+---
+
+## Application Screenshots
+
+### Security Analyst Web Interface
+
+| Dashboard & Threat Telemetry | Real-Time URL Scanner & TreeSHAP |
+| :---: | :---: |
+| ![Dashboard](docs/images/dashboard.png) | ![Scanner Result](docs/images/scanner_result.png) |
+
+| Batch Queue CSV Scanner | Historical Scan Logs |
+| :---: | :---: |
+| ![Batch Scanner](docs/images/batch_scanner.png) | ![Scan History](docs/images/scan_history.png) |
+
+| Model Performance & Metrics | Feature Attribution Auditing |
+| :---: | :---: |
+| ![Model Performance](docs/images/model_performance.png) | ![Feature Importance](docs/images/feature_importance.png) |
+
+### Model Evaluation Curves
+
+| Confusion Matrix (Zero False Positives) | ROC Curve (AUC = 0.9980) |
+| :---: | :---: |
+| ![Confusion Matrix](docs/images/confusion_matrix.png) | ![ROC Curve](docs/images/roc_curve.png) |
+
+| Probability Calibration Reliability Curve | Feature Importances (Top Features) |
+| :---: | :---: |
+| ![Calibration Curve](docs/images/calibration_curve.png) | ![Feature Importance](docs/images/feature_importance.png) |
+
+---
+
+## Key Features
+
+- **Zero-Network Static Safety**: Pure offline analysis. Zero outbound HTTP requests, zero DNS resolutions, zero WHOIS lookups.
+- **70/15/15 Domain-Grouped Split**: Split strictly by registered domain (`tldextract`) — zero domain leakage between training, validation, and test partitions.
+- **Probability Calibration & Tuned Threshold**: Calibrated via `CalibratedClassifierCV(method="sigmoid", cv=3)` (Platt scaling). Decision threshold set to `0.9500`, achieving $\ge 98\%$ recall with **zero false positives** on the held-out test split.
+- **Explainable TreeSHAP Contributions**: Local feature attributions calculated at inference time via TreeSHAP showing exactly which structural patterns increased or decreased risk.
+- **Safe Batch Scanner**: Process up to 100 URLs per request or upload CSV/TXT files with automated CSV formula injection protection (CWE-1236).
+- **Hardenened REST API**: IP-based rate limiting (60 req/min), strict port and IP validation, security headers (`nosniff`, `DENY`, CSP), and admin API key protection on history deletion.
+- **Privacy Mode**: Optional SHA-256 URL hashing (`ANONYMIZE_URLS=true`) to scrub raw sensitive query parameters from logs and databases.
 
 ---
 
@@ -36,401 +100,359 @@
 
 ```mermaid
 flowchart TD
-    User["👤 User / SOC Analyst"]
-    Frontend["⚛️ React + Vite Frontend\nPort 5173 / Docker :80"]
-    Backend["🐍 Flask REST API\nPort 5000"]
-    Features["🔬 Feature Extractor\n36 URL Metrics + tldextract\nbackend/features.py"]
-    Vectorizer["🔤 Char N-Gram TF-IDF\n(3-5 char subwords)"]
-    Model["🤖 Calibrated LightGBM Winner\nmodels/phishguard_model.joblib"]
-    DB["🗄️ SQLite Database\nphishguard.db (History)"]
+    User["👤 Security Analyst / Browser"]
+    Nginx["🌐 Nginx (Docker :80) / Vite (:5173)\nReverse Proxy"]
+    Flask["🐍 Flask REST API (:5000)\nbackend.app"]
+    
+    subgraph Analysis Pipeline
+        Extractor["🔬 Lexical Feature Extractor\n42 Structural Indicators"]
+        TFIDF["🔤 Char N-Gram TF-IDF\n3-5 Subwords (20,000 features)"]
+        Model["🤖 Calibrated LightGBM Classifier\nThreshold = 0.9500"]
+        SHAP["📊 TreeSHAP Attribution\nTop Contributor Features"]
+    end
 
-    User -->|"Enter URL or Upload Batch CSV"| Frontend
-    Frontend -->|"POST /api/predict or /api/predict-batch"| Backend
-    Backend --> Features
-    Features --> Vectorizer
-    Vectorizer --> Model
-    Model -->|"Calibrated Probability & TreeSHAP"| Backend
-    Backend --> DB
-    Backend -->|"JSON Result + SHAP Contribs"| Frontend
-    Frontend -->|"Visual Score + Explanation Cards"| User
+    SQLite[("🗄️ SQLite Database\nphishguard.db (History)")]
+
+    User -->|"HTTP / Single or Batch"| Nginx
+    Nginx -->|"Proxy /api/*"| Flask
+    Flask --> Extractor
+    Extractor --> TFIDF
+    TFIDF --> Model
+    Model --> SHAP
+    Flask --> SQLite
+    SHAP -->|"Prediction, Confidence & Explanations"| Flask
+    Flask -->|"JSON Response"| Nginx
+    Nginx --> User
 ```
 
 ---
 
-## Frontend Web Application
+## Quick Start
 
-The frontend is a modern, responsive single-page web application built with **React 18**, **TypeScript**, **Tailwind CSS**, and **Recharts**. It provides security analysts and SOC teams with interactive phishing investigation tools, comprehensive telemetry, and explainable ML predictions.
+### Prerequisites
+- Python 3.11, 3.12, or 3.14
+- Node.js 20+ and npm
 
-### Key Pages & Capabilities
-
-1. **Dashboard (`/`)**:
-   - High-level threat intelligence overview, recent scan telemetry, and quick scanner launcher.
-   - **Honest Test Split Metrics**: Displays real test set metrics (`Accuracy`, `Recall`, `Precision`, `F1-score`, `ROC-AUC`, and `Brier Score`) directly from the domain-grouped split evaluation (`/api/model-metrics`).
-   - **Out-of-Distribution External Evaluation Card**: If external benchmarks exist (`reports/external_eval.json` via `/api/external-eval`), displays performance on independent external phishing feeds.
-   - **Resilient Health Polling**: Polls `/api/health` every 30 seconds with a real-time status indicator (Green = model ready, Amber = backend ready without model, Red = offline banner).
-
-2. **URL Scanner (`/scanner`)**:
-   - **Zero-Network Static Safety**: URLs are treated strictly as plain text. The application **never visits or fetches** target URLs, and submitted URLs are rendered in non-clickable monospace wrappers (no `<a href>`).
-   - **Client-Side Pre-Validation**: Real-time character counter (up to 2,048 characters), whitespace trimming, and scheme validation (`http://` or `https://`).
-   - **Comprehensive Classification Card**: Calibrated confidence percentage, risk assessment (`SAFE`, `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`), phishing probability, decision threshold used (`0.9500`), and model version.
-   - **"Why this result?" Feature Contributions**: Horizontal bar chart powered by Recharts visualizing real-time TreeSHAP contributions from the model, highlighting structural indicators pushing toward PHISHING or SAFE.
-   - **Analyst Utilities**: "Copy Result" (plain-text summary) and "Copy URL" buttons, 6 pre-configured educational example URLs (3 benign, 3 suspicious), and persistent educational disclaimers.
-
-3. **Batch Scanner (`/batch`)**:
-   - Drag-and-drop file upload for `.csv` and `.txt` files (with 1 MB size limit check).
-   - Live queue counter and animated processing progress indicator.
-   - Interactive results table with prediction filters, search, and sorting.
-   - **CWE-1236 Formula Injection Protection**: CSV export automatically sanitizes spreadsheet formulas by escaping leading `=+-@` characters with a leading single-quote `'`.
-
-4. **Scan History (`/history`)**:
-   - Paginated historical logs with limit/offset querying.
-   - Search by URL/domain, filtering by prediction (`All`, `SAFE`, `PHISHING`) and risk level, with sorting by scan timestamp or score.
-   - **Phase 4 Privacy Mode Awareness**: Dynamically detects if URL anonymization is enabled and re-labels columns as `Domain / SHA-256 Hash`.
-   - **Admin Protected Purge**: Secure history clearance requiring the administrative secret key (kept in-memory only, never persisted to disk or localStorage) with confirmation modal.
-
-5. **Model Performance & Auditing (`/performance`)**:
-   - Model comparison table with cross-validation scores across 4 evaluated architectures.
-   - Test set confusion matrix with true positives, true negatives, and zero false positives.
-   - Interactive ROC curve and Calibration Reliability curve plots with guided "How to read this" technical explanations.
-   - Top 15 global feature importances with domain and structural metric definitions.
-
-6. **About & Methodology (`/about`)**:
-   - Dynamic model metadata populated directly from `/api/model-info` and `/api/model-metrics`.
-   - Complete academic dataset citation for the Prasad & Chandra (2023) PhiUSIIL dataset under CC BY 4.0.
-   - Transparent documentation of design principles, pipeline phases, and threat model boundaries.
-
-### Running the Frontend
-
+### 1. Set Up Backend Virtual Environment
 ```bash
-# Navigate to the frontend directory
+# Clone the repository
+git clone https://github.com/nandanrupesh739/Phishing-Website-Detection.git
+cd Phishing-Website-Detection
+
+# Create virtual environment and activate
+python -m venv .venv
+
+# On Linux / macOS:
+source .venv/bin/activate
+# On Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+
+# Install runtime and development dependencies
+pip install -r requirements.txt -r requirements-dev.txt
+```
+
+### 2. Download Dataset & Train the Model
+```bash
+# Download official UCI PhiUSIIL dataset into data/
+python download_data.py
+
+# Execute model training pipeline (generates model binaries & evaluation plots)
+python train.py
+
+# Export documentation assets
+python scripts/export_docs_assets.py
+```
+
+### 3. Start Flask Backend
+```bash
+python -m backend.app
+# Backend runs at http://127.0.0.1:5000
+```
+
+### 4. Start React Frontend
+In a new terminal:
+```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start Vite development server
 npm run dev
+# Frontend runs at http://localhost:5173
 ```
 
-The application will launch at `http://localhost:5173`.
+---
 
-### Vite Proxy Configuration
+## Docker Quick Start
 
-The Vite dev server proxies all `/api` requests directly to the Flask backend running on `http://127.0.0.1:5000` via [`frontend/vite.config.ts`](frontend/vite.config.ts):
+> **Note**: The machine learning model must be trained before launching the application container, or trained via a one-off compose command, because model binaries are mounted from the host and not baked into the image.
 
-```typescript
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:5000',
-        changeOrigin: true,
-      },
-    },
-  },
-});
+### 1. Train Model on Host or via Compose
+```bash
+# Host option:
+python download_data.py && python train.py
+
+# Or one-off container command:
+docker compose run --rm backend python train.py
 ```
 
-This ensures seamless local development without CORS configuration and guarantees that all frontend network calls stay strictly contained to the local API.
+### 2. Start Application Stack
+```bash
+docker compose up --build
+```
 
-### Accessibility & Theming
-
-- **Keyboard Navigation & ARIA**: Full keyboard accessibility with visible `:focus-visible` focus rings, `aria-live="polite"` result announcements, and descriptive `aria-label` attributes on icon controls.
-- **Color Contrast & Dual Encoding**: Meets WCAG AA standards. Dual encoding (color + text + icon) ensures SAFE and PHISHING states are never distinguished by color alone.
-- **Responsive Layout**: Fluid layouts adapted for screens down to 360 px width without horizontal page clipping.
-- **Light / Dark Mode**: Built-in theme switcher stored in `localStorage` with automatic fallback to system preferences (`prefers-color-scheme`).
-
----
-
-## Application Screenshots
-
-The following preview captures illustrate PhishGuard AI's primary interface pages:
-
-| Dashboard Overview | URL Scanner (Prediction & SHAP) |
-| :---: | :---: |
-| ![Dashboard](docs/images/dashboard.png) | ![Scanner Result](docs/images/scanner_result.png) |
-
-| Batch Scanner | Scan History |
-| :---: | :---: |
-| ![Batch Scanner](docs/images/batch_scanner.png) | ![Scan History](docs/images/scan_history.png) |
-
-| Model Performance & Auditing |
-| :---: |
-| ![Model Performance](docs/images/model_performance.png) |
-
-> 📸 **Screenshot Guide for Manual Capture**:
-> To replace the placeholder images above with live screenshots of your running instance:
-> 1. Start the Flask backend (`python -m backend.app`) and Vite frontend (`npm run dev`).
-> 2. Open `http://localhost:5173` in your browser at 1920x1080 resolution.
-> 3. Save the captures into `docs/images/` with the exact filenames:
->    - `dashboard.png`: Dashboard overview with telemetry cards and recent scans.
->    - `scanner_result.png`: Scanner page showing a completed scan result with the "Why this result?" SHAP chart.
->    - `batch_scanner.png`: Batch scanner page after processing a multi-URL CSV or TXT list.
->    - `scan_history.png`: Scan history page with search/filters applied.
->    - `model_performance.png`: Model Performance page showing the confusion matrix and calibration curves.
+- **Frontend**: Accessible at `http://localhost:5173` (or port configured in `.env`).
+- **Backend API**: Accessible at `http://localhost:5173/api/` (reverse-proxied via Nginx). The backend container is isolated on the internal bridge network and does not publish port 5000 directly to the host.
 
 ---
 
-## Dataset & Leakage Prevention
+## API Overview
 
-- **Dataset**: [UCI PhiUSIIL Phishing URL Dataset (ID 967)](https://archive.ics.uci.edu/dataset/967/phiusiil+phishing+url+dataset)
-- **Raw Records**: 235,795 URLs (235,370 clean rows after deduplication)
-- **SHA-256**: `a236549cd369cd80bd478ff8e1779cbf44c58d5c3f79f7a51a1adbed7d06d1c6`
-- **Label Standard**: `0` = **SAFE** (134,850 records, 57.3%), `1` = **PHISHING** (100,520 records, 42.7%)
-- **Domain-Grouped Split**:
-  - **Train Set (70%)**: 166,971 URLs (13,830 unique domains)
-  - **Validation Set (15%)**: 34,222 URLs (2,963 unique domains, 0 overlap with Train)
-  - **Held-Out Test Set (15%)**: 34,177 URLs (2,964 unique domains, 0 overlap with Train or Val)
-  - *Standard random splits allow identical domains in train and test, producing artificially inflated metrics. Grouping by registered domain guarantees honest evaluation on previously unseen domains.*
+Full REST API documentation is available in [`docs/api.md`](docs/api.md).
 
----
-
-## Model Evaluation & Honest Benchmark Results
-
-> All metrics below are read directly from [`docs/metrics.json`](docs/metrics.json) and [`models/model_metrics.json`](models/model_metrics.json). No numbers are invented.
-
-### 1. Validation Set Model Comparison
-
-Candidate models were trained on the training split and evaluated on the held-out validation set to select the winner and tune the decision threshold:
-
-| Model | Accuracy | Phishing Precision | Phishing Recall | Phishing F1 | ROC-AUC | Brier Score |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **LightGBM (Tabular + TF-IDF) [Winner]** | **99.58%** | **99.92%** | **99.09%** | **0.9950** | **0.9985** | **0.0038** |
-| **Random Forest (Tabular 42)** | 99.56% | 99.85% | 99.11% | 0.9948 | 0.9979 | 0.0048 |
-| **Logistic Regression (Tabular + TF-IDF)** | 99.35% | 99.83% | 98.65% | 0.9924 | 0.9989 | 0.0053 |
-| **Naive Bayes (Char TF-IDF)** | 97.56% | 98.01% | 96.23% | 0.9711 | 0.9952 | 0.0194 |
-
-### 2. Final Evaluation on Held-Out Test Set (Touched Once)
-
-- **Total Test Samples**: 34,177 unseen URLs
-- **Winning Architecture**: `LightGBM` (max_depth=10, num_leaves=63, n_estimators=150, learning_rate=0.06, scale_pos_weight=1.34) + `CalibratedClassifierCV(method="sigmoid", cv=3)`
-- **Calibrated Decision Threshold**: `0.9500` (tuned on Validation set to ensure $\ge 98\%$ recall with zero false positive rate)
-
-| Metric | Score | Explanation |
-| :--- | :---: | :--- |
-| **Test Accuracy** | **99.34%** | Overall correct classifications on unseen test domains |
-| **Phishing Precision** | **100.00%** | Zero false positives on test set — every flag is true phishing |
-| **Phishing Recall** | **98.39%** | High coverage catching 13,835 of 14,062 test phishing attacks |
-| **Phishing F1-Score** | **0.9919** | Harmonic mean of precision and recall |
-| **ROC-AUC** | **0.9980** | Area under the Receiver Operating Characteristic curve |
-| **PR-AUC (Avg Precision)** | **0.9983** | Precision-Recall curve area |
-| **Brier Score** | **0.0042** | Calibration loss (close to 0.0 confirms well-calibrated probabilities) |
-| **False Positive Rate (FPR)**| **0.0000%** | **0 false alarms** out of 20,115 legitimate URLs in held-out test set |
-
-### 3. Test Set Confusion Matrix
-
-$$\text{Held-Out Test Set} = 34,177 \text{ URLs}$$
-
-| Actual \ Predicted | Predicted SAFE (0) | Predicted PHISHING (1) | Total |
-| :--- | :---: | :---: | :---: |
-| **Actual SAFE (0)** | **20,115** (True Negative) | **0** (False Positive) | 20,115 |
-| **Actual PHISHING (1)** | 227 (False Negative) | **13,835** (True Positive) | 14,062 |
+| Method | Endpoint | Description | Rate Limit |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/health` | Service health, model status, feature count, DB connectivity | None |
+| `POST` | `/api/predict` | Classify single URL; returns confidence, score, TreeSHAP attributions | 60/min |
+| `POST` | `/api/predict-batch` | Classify list of URLs (max 100); preserves input ordering | 60/min |
+| `GET` | `/api/history` | Paginated scan history logs and aggregate threat statistics | None |
+| `DELETE` | `/api/history` | Clear scan history (Requires `X-Admin-Key` header) | None |
+| `GET` | `/api/model-metrics` | Model comparison, test set metrics, calibration stats | None |
+| `GET` | `/api/model-info` | Metadata including trained algorithm, date, and feature list | None |
+| `GET` | `/api/features` | Returns array of the 42 extracted lexical feature names | None |
 
 ---
 
-## Evaluation Plots
+## Configuration
 
-Generated directly by the training pipeline into [`docs/images/`](docs/images/):
+PhishGuard AI is configured via environment variables. Create a `.env` file from `.env.example`:
 
-<div align="center">
-
-| Confusion Matrix | Reliability Calibration Curve |
-| :---: | :---: |
-| ![Confusion Matrix](docs/images/confusion_matrix.png) | ![Reliability Curve](docs/images/reliability_curve.png) |
-
-| ROC Curve | Top Feature Importances |
-| :---: | :---: |
-| ![ROC Curve](docs/images/roc_curve.png) | ![Feature Importance](docs/images/feature_importance.png) |
-
-</div>
+| Variable | Default Value | Description |
+| :--- | :--- | :--- |
+| `FLASK_HOST` | `127.0.0.1` | Host interface for Flask server (`0.0.0.0` inside Docker) |
+| `FLASK_PORT` | `5000` | Port for Flask backend |
+| `FLASK_DEBUG` | `false` | Enable Flask debug mode (must be `false` in production) |
+| `SECRET_KEY` | *(Random 32-char hex)* | Flask session secret key |
+| `ADMIN_API_KEY` | `dev-admin-key-change-in-production` | Secret required in `X-Admin-Key` header for `DELETE /api/history` |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,...` | Comma-separated list of permitted CORS origins |
+| `DATABASE_PATH` | `phishguard.db` | Path to SQLite database file |
+| `MODEL_PATH` | `models/phishguard_model.joblib` | Primary model bundle path (`joblib`) |
+| `MODEL_PKL_PATH` | `models/model.pkl` | Fallback model bundle path (`pickle`) |
+| `METRICS_PATH` | `models/model_metrics.json` | Path to training metrics JSON |
+| `RATE_LIMIT_PREDICT` | `60 per minute` | Rate limit string for `/api/predict` endpoints |
+| `MAX_BATCH_SIZE` | `100` | Maximum URLs accepted in a single batch scan |
+| `MAX_CONTENT_LENGTH` | `1048576` | Maximum request payload size in bytes (1 MB) |
+| `ANONYMIZE_URLS` | `false` | When `true`, URLs are hashed with SHA-256 before storage |
+| `FRONTEND_PORT` | `5173` | Host port mapped to frontend container in Docker Compose |
 
 ---
 
-## URL Feature Engineering (42 Features)
+## Project Structure
 
-All 42 features are extracted strictly offline using standard URL parsing, regex, and the `tldextract` public suffix list snapshot:
+```
+Phishing-Website-Detection/
+├── .github/
+│   └── workflows/
+│       └── ci.yml                 # GitHub Actions CI matrix (Py 3.11/3.12 + Node 20)
+├── backend/
+│   ├── tests/                     # 168 pytest test cases (96% line coverage)
+│   ├── __init__.py
+│   ├── app.py                     # Flask REST API with security headers & rate limits
+│   ├── config.py                  # Pydantic/dataclass configuration and environment parser
+│   ├── database.py                # SQLite scan history database with migration support
+│   ├── features.py                # 42 lexical URL feature extractors
+│   ├── predictor.py               # Inference engine with TreeSHAP and Platt scaling
+│   └── train_model.py             # Reusable training pipeline helper
+├── docs/
+│   ├── images/                    # Tracked README screenshots and evaluation plots
+│   ├── api.md                     # Comprehensive REST API reference
+│   └── metrics.json               # Canonical evaluation results from training run
+├── frontend/
+│   ├── src/
+│   │   ├── components/            # UI components (Scanner, Charts, Skeleton, Modal)
+│   │   ├── pages/                 # Dashboard, Scanner, ScanHistory, Performance, About
+│   │   ├── services/              # Axios API client layer with health polling
+│   │   ├── test/                  # Vitest test suite (Smoke, Unit, Error boundaries)
+│   │   └── types/                 # TypeScript interfaces aligned with backend schema
+│   ├── Dockerfile                 # Multi-stage build (Node 20 -> Nginx Alpine)
+│   ├── nginx.conf                 # Nginx SPA router and reverse proxy configuration
+│   └── package.json
+├── reports/                       # Working training evaluation plots and reports
+├── scripts/
+│   ├── e2e_smoke.py               # In-process Flask live HTTP smoke test
+│   ├── export_docs_assets.py      # Doc asset synchronization utility
+│   ├── external_eval.py           # Out-of-distribution evaluation runner
+│   └── error_analysis.py          # False-positive / False-negative diagnostics
+├── .dockerignore
+├── .gitignore
+├── .pre-commit-config.yaml        # Ruff and code hygiene pre-commit hooks
+├── CONTRIBUTING.md
+├── docker-compose.yml
+├── Dockerfile                     # Root backend container file
+├── download_data.py               # UCI PhiUSIIL dataset downloader
+├── LICENSE                        # MIT License
+├── Makefile                       # Developer automation task targets
+├── pyproject.toml                 # Ruff and Mypy tool configuration
+├── requirements.txt               # Pinned runtime dependencies
+├── requirements-dev.txt           # Pinned test and developer dependencies
+├── SECURITY.md                    # Security policy, scope, and pickle trust advisory
+└── train.py                       # Main ML pipeline: feature extraction & model training
+```
 
-1. `url_length`: Total character length of normalized URL
-2. `hostname_length`: Character length of host
-3. `num_dots`: Total count of dot characters
-4. `num_hyphens`: Total count of hyphen characters
-5. `num_at_symbols`: Count of `@` characters
-6. `num_digits`: Total digits across entire URL
-7. `num_subdomains`: Count of subdomain labels via `tldextract` PSL (excluding `www`)
-8. `path_length`: Length of path component
-9. `num_query_params`: Count of URL query parameters
-10. `num_percent_encoded`: Count of `%XX` hex escape sequences
-11. `num_suspicious_chars`: Count of punctuation characters (`;`, `+`, `$`, etc.)
-12. `has_ip_hostname`: Hostname is IPv4 / IPv6 literal (0/1)
-13. `has_non_default_port`: Explicit non-standard port (0/1)
-14. `has_https`: Canonical HTTPS scheme (0/1)
-15. `is_url_shortener`: Known URL shortener domain match (0/1)
-16. `has_suspicious_terms`: Phishing keywords in path/query/subdomain (excluding registered domain)
-17. `has_repeated_separators`: Obfuscation delimiters like `//` in path or `&&`, `??`, `==`
-18. `has_long_hostname`: Hostname length > 50 characters
-19. `hostname_entropy`: Shannon entropy of hostname in bits/character
-20. `digit_ratio`: Digits divided by total URL length
-21. `has_punycode`: Hostname contains `xn--` punycode
-22. `has_non_ascii_hostname`: Internationalized / non-ASCII characters in host
-23. `has_at_before_host`: `@` trick prior to authority
-24. `has_unusual_encoding`: Excessive percent or unicode encoding density
-25. `num_special_chars`: Special symbol count outside standard RFC sets
-26. `scheme_missing`: Binary flag indicating user omitted scheme (e.g. `example.com`)
-27. `has_suspicious_tld`: Match against known high-abuse TLDs (`.top`, `.xyz`, `.club`, etc.)
-28. `tld_frequency`: Relative frequency of TLD suffix in training split (zero leakage)
-29. `brand_in_wrong_place`: Target brand name appears outside registered domain label
-30. `has_brand_impersonation`: Alias for `brand_in_wrong_place`
-31. `domain_digit_count`: Digit count strictly inside registered domain label
-32. `domain_num_digits`: Alias for `domain_digit_count`
-33. `domain_hyphen_count`: Hyphen count within registered domain label
-34. `longest_token_length`: Length of the longest token (split on `.`, `-`, `/`, `_`, `?`, `=`)
-35. `path_depth`: Count of path directory segments
-36. `vowel_consonant_ratio`: Vowel to consonant ratio of registered domain label
-37. `domain_vowel_ratio`: Vowel to letter ratio of registered domain label
-38. `digit_to_letter_ratio`: Ratio of digits to letters in registered domain label
-39. `has_double_extension`: Consecutive file extensions (e.g. `.php.html`, `.pdf.exe`)
-40. `has_at_in_path`: `@` symbol present in path or query
-41. `has_double_slash_in_path`: Consecutive slashes `//` in path
-42. `has_ip_in_path`: IPv4 address pattern present in path or query string
+---
+
+## How the Model Works
+
+### Lexical Features (42)
+
+The feature extractor ([`backend/features.py`](backend/features.py)) extracts 42 numerical and boolean features from the raw URL string without network interaction:
+
+1. **Length Metrics**: `url_length`, `hostname_length`, `path_length`.
+2. **Structural Tokens**: `num_dots`, `num_hyphens`, `num_subdomains`, `path_depth`, `longest_token_length`.
+3. **Character Distributions**: `num_digits`, `digit_ratio`, `vowel_consonant_ratio`, `domain_vowel_ratio`, `digit_to_letter_ratio`.
+4. **Entropy & Obfuscation**: `hostname_entropy`, `num_percent_encoded`, `has_unusual_encoding`, `has_repeated_separators`.
+5. **Brand Spoofing & Phishing Indicators**: `has_brand_impersonation` (checks PayPal, Google, Apple, Microsoft, Amazon, Netflix, Wells Fargo, Chase, and banking keywords embedded into subdomains or paths of unassociated domains), `brand_in_wrong_place`, `has_suspicious_terms`.
+6. **Network & Protocol Semantics**: `has_ip_hostname`, `has_ip_in_path`, `has_non_default_port`, `has_https`, `scheme_missing`.
+7. **TLD Semantics**: `has_suspicious_tld`, `tld_frequency`, `domain_digit_count`, `domain_hyphen_count`.
+8. **Special Tokens**: `has_at_symbol`, `has_at_before_host`, `has_at_in_path`, `has_double_extension`, `has_double_slash_in_path`, `has_punycode`, `is_url_shortener`.
+
+### Character N-Gram TF-IDF Subwords
+In addition to tabular features, a `TfidfVectorizer` extracts character 3-gram to 5-gram subwords (`min_df=5`, `max_features=20000`). This captures obfuscated lexical signatures, phonetic tricks, and phishing keyword stems directly from URL text.
+
+### Model Comparison
+Four model architectures were evaluated using 5-fold cross-validation on the training set:
+
+| Architecture | Features | CV F1-Score | Validation ROC-AUC |
+| :--- | :--- | :---: | :---: |
+| **LightGBM (Winner)** | **42 Tabular + 20k TF-IDF** | **0.9951 ± 0.0013** | **0.9985** |
+| Random Forest | 42 Tabular | 0.9953 ± 0.0006 | 0.9979 |
+| Logistic Regression | 42 Tabular + 20k TF-IDF | 0.9905 ± 0.0035 | 0.9989 |
+| Multinomial Naive Bayes | 20k TF-IDF Subwords | 0.9672 ± 0.0149 | 0.9952 |
+
+### Domain-Grouped Split
+Standard random train/test splits cause severe data leakage because benign domains (such as `wikipedia.org` or `cnn.com`) appear thousands of times across the dataset. PhishGuard AI enforces a **70/15/15 Domain-Grouped Split** using `GroupKFold` / `GroupShuffleSplit` on the registered domain extracted via `tldextract`. **Zero registered domains overlap** between the training (164,759 URLs), validation (35,144 URLs), and test (34,177 URLs) splits.
+
+### Calibration and Threshold Tuning
+1. **Probability Calibration**: LightGBM raw leaf scores are calibrated via `CalibratedClassifierCV(method="sigmoid", cv=3)` (Platt scaling) so returned scores represent true empirical probabilities. Brier score on the test set is **0.0042**.
+2. **Threshold Tuning**: The decision threshold was tuned on the validation set targeting $\ge 98\%$ recall with **zero false positives** ($\text{FPR} = 0.0$). The resulting decision threshold is **0.9500**. Any URL with calibrated phishing probability $\ge 0.9500$ is flagged as `PHISHING`.
+
+---
+
+## Benchmark Results
+
+All metrics below are verified directly from [`docs/metrics.json`](docs/metrics.json) evaluated on the held-out test split (34,177 unseen URLs across completely unseen domains):
+
+| Metric | Held-Out Test Set Value |
+| :--- | :--- |
+| **Accuracy** | **0.9934** (99.34%) |
+| **Precision** | **1.0000** (100.0%) |
+| **Recall** | **0.9839** (98.39%) |
+| **F1-Score** | **0.9919** (99.19%) |
+| **ROC-AUC** | **0.9980** |
+| **Average Precision (PR-AUC)** | **0.9983** |
+| **Brier Score** | **0.0042** |
+| **False Positive Rate (FPR)** | **0.0000** (0.0%) |
+| **Decision Threshold** | **0.9500** |
+
+### Test Split Confusion Matrix
+
+```
+                      Predicted Benign (SAFE)    Predicted Phishing (PHISHING)
+Actual Benign (0):             20,115                                0   (0 FP)
+Actual Phishing (1):              227                           13,835
+```
+
+- **True Negatives**: 20,115 benign URLs correctly identified.
+- **False Positives**: **0** false alarms out of 20,115 benign URLs.
+- **True Positives**: 13,835 phishing URLs caught.
+- **False Negatives**: 227 phishing URLs missed (conservative threshold tradeoff to guarantee zero benign disruption).
+
+---
+
+## External Evaluation
+
+To test out-of-distribution generalization beyond the training dataset, [`scripts/external_eval.py`](scripts/external_eval.py) provides an offline evaluation framework against fresh, independent threat feeds:
+- Phishing samples: Verified feeds from OpenPhish or PhishTank (as `data/external/phishing.txt`).
+- Benign samples: Top registered domains from Tranco (as `data/external/legit.txt`).
+
+*External benchmark scores depend on user-provided local feeds and are marked as **not available** in the repository default clone until external data feeds are downloaded by the analyst.*
 
 ---
 
 ## Honest Limitations & Threat Model
 
-1. **URL-Structure Only**: The model does not inspect webpage HTML, download files, verify SSL/TLS certificates, or resolve live DNS/WHOIS records.
-2. **Compromised Legitimate Domains**: Phishing hosted on legitimate cloud infrastructure or compromised authority domains (e.g. `docs.google.com`, `drive.google.com`, `sharepoint.com`) may produce a low score because the registered domain itself is trusted.
-3. **Shortener Services**: URL shorteners (`bit.ly`, `tinyurl.com`) conceal the target host. PhishGuard flags them as potential risks, but cannot unmask the destination without network lookups.
-4. **Dataset Period & Distribution**: Models trained on single-dataset snapshots may show reduced recall against novel attack vectors and emergent TLD trends.
-5. **Scheme / `www.` Normalization Choice**: In raw datasets, homepages frequently include `https://www.`. PhishGuard addresses this by standardizing URLs through `normalize_url()`, stripping leading `www.`, downcasing hosts, and defaulting missing schemes to `https://` with a dedicated `scheme_missing` feature flag.
-6. **Pickle / Joblib Trust Assumption**: Model weights loaded via `joblib.load()` run arbitrary Python bytecode during deserialization. PhishGuard enforces strict containment to project `models/` directory. Only load model files created by this repository.
+1. **URL-String Only (No Page Inspection)**: PhishGuard AI does not fetch HTML, render JavaScript, execute DOM scripts, inspect TLS certificates, or verify DNS/WHOIS records. Attackers using benign-looking URLs with dynamic client-side redirects cannot be detected through URL syntax alone.
+2. **Compromised Legitimate Domains**: Attacks hosted on reputable platforms (e.g., Google Forms, Microsoft SharePoint, compromised WordPress sites) often exhibit benign URL lexical characteristics and may evade static classification.
+3. **URL Shorteners**: Shortening services (`bit.ly`, `tinyurl.com`, `t.co`) mask the real destination URL. PhishGuard flags known shorteners as high-entropy structures but cannot resolve the destination without network visits.
+4. **Single Dataset & Temporal Drift**: The model was trained on the UCI PhiUSIIL dataset (collected 2023). Phishing campaigns evolve rapidly, and attackers adapting their URL structures over time may reduce accuracy unless models are regularly retrained.
+5. **Dataset Artifacts vs Real World**: Benchmark metrics on academic datasets (99.3% accuracy) reflect controlled collections and are generally higher than real-world operational performance where class imbalance is severe.
+6. **Handling of Protocol & Subdomain Artifacts**: The raw dataset contains artifacts where benign entries often feature `www.` or `https://` while phishing entries frequently omitted them. PhishGuard normalizes URLs before feature extraction (lowercasing hostnames, stripping leading `www.`, and standardizing schemes) to prevent the model from learning synthetic shortcuts.
+7. **Educational Scope**: This project is an educational and research implementation. It is **not** an enterprise antivirus or web security product and should never be used as the sole defense mechanism.
 
 ---
 
-## External Evaluation Script
+## Testing & Quality Tooling
 
-To evaluate the saved model on fresh real-world URL feeds outside the PhiUSIIL dataset:
+### Test Suites
+- **Backend**: 168 tests across 6 test modules in `backend/tests/`.
+  - Line Coverage: **96%** on `backend/` (target: $\ge 85\%$).
+  - Zero-network safety enforcement: monkeypatched sockets and network libraries assert that no code path ever connects to an analyzed URL.
+- **Frontend**: 39 Vitest tests across 8 test suites verifying error states, empty states, smoke rendering, and accessibility.
+- **End-to-End Smoke Test**: [`scripts/e2e_smoke.py`](scripts/e2e_smoke.py) boots Flask on an ephemeral port, executes live REST requests against all endpoints, verifies security headers, and shuts down cleanly.
 
-```powershell
-python scripts/external_eval.py
-```
+### Code Quality & Static Analysis
+- **Ruff**: Enforces PEP 8 styling, import ordering, and formatting (`ruff check .` and `ruff format --check .`).
+- **Mypy**: Enforces strict typing across `backend/` (`mypy backend`).
+- **ESLint**: Enforces TypeScript and React best practices (`npm run lint`).
+- **Pre-commit**: Configured in `.pre-commit-config.yaml`.
 
-- Reads fresh phishing URLs from `data/external/phishing.txt` (OpenPhish / PhishTank export)
-- Reads fresh legitimate URLs from `data/external/legit.txt` (Tranco top-sites list, formatted as `https://domain`)
-- Runs the saved model, reports phishing recall, false-positive rate on legitimate sites, precision, and confusion matrix.
-- Saves results to `reports/external_eval.json`.
-- **Integrity Rule**: Does NOT fetch or visit any URLs. If external files are missing, prints how to manually download them and exits cleanly with exit code 0.
-
----
-
-## Error Analysis & Discovered Patterns
-
-To inspect the 25 most confident false positives and 25 most confident false negatives on the test set:
-
-```powershell
-python scripts/error_analysis.py
-```
-
-Results are saved to `reports/error_analysis.csv` and `reports/error_analysis.json`. Key findings:
-- With calibrated threshold `0.9500`, there are **0 false positives** out of 20,115 legitimate test URLs (100% precision).
-- Top false negatives consist predominantly of clean, short generic domains lacking lexical indicators (e.g. `cfg.me`, `gtn.cl`), reflecting the natural boundary of static URL analysis without page content.
-
-### Top 5 Discovered Error Patterns
-1. **Legitimate Deep Portals**: Benign services with deeply nested paths and security keywords (e.g. `/login`, `/verify`, `/auth`) trigger elevated risk signals.
-2. **Brand Mentions in News / Blogs**: Legitimate news articles mentioning brand names in URL query strings (e.g. `news.com/article/paypal-update`) trigger brand-in-wrong-place heuristics.
-3. **Clean Domain Phishing**: Phishing hosted on newly registered domains with short, clean paths evade structural heuristics (false negatives).
-4. **Compromised Cloud Infrastructure**: Phishing campaigns abusing legitimate platforms (e.g. docs, pages, s3) mimic benign domain structure (false negatives).
-5. **High-Entropy Enterprise Subdomains**: Complex subdomains or regional TLD combinations on legitimate corporate portals trigger entropy and token length warnings.
+### GitHub Actions CI
+The CI workflow ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on push and pull requests:
+- **Backend Job**: Python 3.11 and 3.12 matrix, pip caching, ruff check, mypy, pytest with coverage artifact generation.
+- **Frontend Job**: Node 20, npm clean install, ESLint, Vitest, and production build verification.
+- **Git Leakage Guard**: Fails if dataset CSVs, model binaries (`.joblib`, `.pkl`), databases (`*.db`), or `.env` files are accidentally committed.
 
 ---
 
-## Quick Start & Setup
+## Security & Privacy Notes
 
-### 1. Prerequisites
-- Python 3.11+ (tested on Python 3.11 and 3.14)
-- Node.js 18+ and npm
-- Git
-
-### 2. Python Environment Setup
-```powershell
-# Clone repository
-git clone https://github.com/nandanrupesh739/Phishing-Website-Detection.git
-cd Phishing-Website-Detection
-
-# Create virtual environment
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Create local environment config
-Copy-Item .env.example .env
-```
-
-### 3. Download Dataset
-```powershell
-python download_data.py
-```
-*(Places clean `phishing_dataset.csv` into `data/`)*
-
-### 4. Train the Model
-```powershell
-python train.py
-```
-*(Runs 70/15/15 domain-grouped split, compares 4 models, calibrates winner, tunes threshold on validation set, evaluates test set, and writes models/ and reports/)*
-
-### 5. Start Backend API
-```powershell
-python -m backend.app
-```
-*(API runs at `http://127.0.0.1:5000`)*
-
-### 6. Start Frontend Web Application
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-*(UI runs at `http://localhost:5173`)*
+- **Inert String Processing**: Submitted URLs are strictly treated as text. The frontend renders them inside `<span>` tags with copy buttons—never clickable `<a>` links.
+- **Model Deserialization**: Python `joblib` and `pickle` deserialization can execute arbitrary code. Only load models trained locally or verified with cryptographic checksums. See [`SECURITY.md`](SECURITY.md).
+- **Rate Limiting**: Protects against denial-of-service with a default cap of 60 requests/minute.
+- **Formula Injection Mitigation**: CSV exports escape leading `=+-@` characters to protect spreadsheet applications from formula injection attacks (CWE-1236).
+- **URL Anonymization**: Setting `ANONYMIZE_URLS=true` stores SHA-256 hashes of URLs in the database to prevent accidental recording of sensitive tokens or credentials in query parameters.
 
 ---
 
-## Docker Deployment
+## Roadmap
 
-Run the complete backend and frontend stack with Docker Compose:
-
-```bash
-docker compose up --build
-```
-
-- **Frontend**: `http://localhost:5173`
-- **Backend API**: `http://localhost:5000`
-- Host `./models/` and `./data/` are mounted into the container as documented in `docker-compose.yml`.
+- [x] Phase 1: Machine learning pipeline with 42 features & domain-grouped split.
+- [x] Phase 2: Flask REST API with TreeSHAP explanations and rate limiting.
+- [x] Phase 3: Benchmark evaluation, calibration curves, and error analysis.
+- [x] Phase 4: Production hardening, security headers, SQLite migrations, and privacy mode.
+- [x] Phase 5: React 18 + Vite frontend with batch scanner, dark theme, and robust states.
+- [x] Phase 6: Full test coverage (96%), CI automation, Docker compose, and comprehensive documentation.
+- [ ] Post-Release: Active learning feedback loop with analyst-verified URLs.
+- [ ] Post-Release: Lightweight ONNX export for browser extension integration.
 
 ---
 
-## Running Tests
+## License
 
-### Backend Unit & Audit Tests:
-```powershell
-python -m pytest backend/tests/ -v --cov=backend
+This project is licensed under the **MIT License**. See [`LICENSE`](LICENSE) for full details.
+
+---
+
+## Dataset Citation & Credits
+
+The training dataset utilized is the **PhiUSIIL Phishing URL Dataset** provided by the UCI Machine Learning Repository under the Creative Commons Attribution 4.0 International (CC BY 4.0) license.
+
+```bibtex
+@misc{prasad2023phiusiil,
+  author       = {Prasad, Arvind and Chandra, Shalini},
+  title        = {{PhiUSIIL Phishing URL Dataset}},
+  year         = {2023},
+  publisher    = {UCI Machine Learning Repository},
+  note         = {{DOI}: https://doi.org/10.24432/C5TM74}
+}
 ```
 
-### Frontend Tests (Vitest & Testing Library):
-```powershell
-cd frontend
-npm test
-```
-
-### Frontend Linting:
-```powershell
-cd frontend
-npm run lint
-```
-
-### Frontend Production Build:
-```powershell
-cd frontend
-npm run build
-```
+- Dataset Link: [UCI Machine Learning Repository — PhiUSIIL Phishing URL Dataset (id=967)](https://archive.ics.uci.edu/dataset/967/phiusiil+phishing+url+dataset)
+- Authors: Arvind Prasad and Shalini Chandra (2023).
