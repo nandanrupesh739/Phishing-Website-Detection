@@ -272,7 +272,8 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
   const [result, setResult] = useState<PredictionResult | null>(null);
   const [error, setError] = useState('');
   const [isOffline, setIsOffline] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copiedResult, setCopiedResult] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
   const [showFeatures, setShowFeatures] = useState(false);
 
   // Batch scanner state
@@ -284,10 +285,31 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
 
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const validateBrowserUrl = (inputVal: string): string | null => {
+    const trimmed = inputVal.trim();
+    if (!trimmed) {
+      return 'Please enter a URL to scan.';
+    }
+    if (trimmed.length > 2048) {
+      return `URL exceeds 2048 characters maximum limit (current length: ${trimmed.length} chars).`;
+    }
+    // Reject non-http/https schemes if a scheme is present
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
+      const scheme = trimmed.split(':')[0].toLowerCase();
+      if (scheme !== 'http' && scheme !== 'https') {
+        return `Unsupported scheme "${scheme}:". Only http:// and https:// URLs are permitted.`;
+      }
+    }
+    return null;
+  };
+
   const handleScan = async () => {
     const trimmed = url.trim();
-    if (!trimmed) { setError('Please enter a URL to scan.'); return; }
-    if (trimmed.length > 2048) { setError('URL exceeds 2048 characters maximum limit.'); return; }
+    const valError = validateBrowserUrl(trimmed);
+    if (valError) {
+      setError(valError);
+      return;
+    }
 
     setError('');
     setIsOffline(false);
@@ -303,9 +325,9 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
-      if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('HTTP 503')) {
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('HTTP 503') || msg.includes('offline')) {
         setIsOffline(true);
-        setError('Backend service is offline or the model is not loaded. Please verify the Flask server is running.');
+        setError('Backend service is offline or unreachable. Start it with python -m backend.app');
       } else {
         setError(msg);
       }
@@ -384,12 +406,35 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
     link.click();
   };
 
-  const handleCopy = () => {
+  const handleCopyUrl = () => {
     if (!result) return;
-    const text = JSON.stringify(result, null, 2);
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+    navigator.clipboard.writeText(result.url).then(() => {
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 2000);
+    });
+  };
+
+  const handleCopyResult = () => {
+    if (!result) return;
+    const phishProbStr = result.phishing_probability !== undefined && result.phishing_probability !== null
+      ? `${(result.phishing_probability * 100).toFixed(1)}%`
+      : (result.score !== null && result.score !== undefined ? `${(result.score * 100).toFixed(1)}%` : 'N/A');
+
+    const lines = [
+      '=== PhishGuard AI URL Scan Result ===',
+      `URL: ${result.url}`,
+      `Prediction: ${result.prediction ?? 'UNKNOWN'}`,
+      `Calibrated Confidence: ${result.confidence !== null && result.confidence !== undefined ? `${result.confidence.toFixed(1)}%` : 'N/A'}`,
+      `Phishing Probability: ${phishProbStr}`,
+      `Risk Level: ${result.risk_level ?? 'UNKNOWN'}`,
+      `Decision Threshold: ${result.threshold !== undefined && result.threshold !== null ? result.threshold.toFixed(4) : '0.5000'}`,
+      `Model Version: ${result.model_version ?? 'v2.0.0'}`,
+      `Risk Indicators: ${result.indicators && result.indicators.length > 0 ? result.indicators.join('; ') : 'None detected'}`,
+      'Disclaimer: URL-only estimate based on lexical/structural patterns, not a guarantee. The system does not visit the website.',
+    ];
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      setCopiedResult(true);
+      setTimeout(() => setCopiedResult(false), 2000);
     });
   };
 
@@ -522,23 +567,57 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
             </div>
           )}
 
-          {/* Quick examples */}
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            <span className="text-xs text-slate-500">Quick Test:</span>
-            {[
-              'https://paypal.com.evil.xyz/login',
-              'http://192.168.1.1/verify-account',
-              'https://bit.ly/secure-redirect',
-              'https://github.com/project/phishguard',
-            ].map(ex => (
-              <button
-                key={ex}
-                onClick={() => { setUrl(ex); setResult(null); setError(''); }}
-                className="text-xs px-2.5 py-1 rounded-md font-mono transition-colors bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20"
-              >
-                {ex.length > 32 ? ex.slice(0, 32) + '…' : ex}
-              </button>
-            ))}
+          {/* Try an example */}
+          <div className="space-y-2 pt-2 border-t border-slate-800/80">
+            <div className="text-xs font-semibold text-slate-400">
+              Try an example (Made-up test URLs · never visited):
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-medium text-emerald-400 flex items-center gap-1">
+                  <CheckCircle size={12} /> Safe-looking examples:
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: 'Uni Portal', url: 'https://secure-portal.example-university.edu/student/login' },
+                    { label: 'Company Docs', url: 'https://internal-docs.mycompany-cloud.org/handbook' },
+                    { label: 'Open Source', url: 'https://community-hub.opensource-foundation.net/projects' },
+                  ].map(ex => (
+                    <button
+                      key={ex.label}
+                      type="button"
+                      onClick={() => { setUrl(ex.url); setResult(null); setError(''); }}
+                      className="text-xs px-2.5 py-1 rounded font-mono transition-colors bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 hover:bg-emerald-500/20 truncate max-w-full"
+                      title={ex.url}
+                    >
+                      {ex.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-medium text-red-400 flex items-center gap-1">
+                  <AlertTriangle size={12} /> Suspicious-looking examples:
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: 'PayPal Spoof', url: 'https://paypal.com.account-verification-service.xyz/secure/login' },
+                    { label: 'IP Host + Port', url: 'http://192.168.1.105:8080/appleid/verify-identity-confirm' },
+                    { label: 'Bank Spoof', url: 'https://secure-chase-update.bank.com-verify.net/auth/portal' },
+                  ].map(ex => (
+                    <button
+                      key={ex.label}
+                      type="button"
+                      onClick={() => { setUrl(ex.url); setResult(null); setError(''); }}
+                      className="text-xs px-2.5 py-1 rounded font-mono transition-colors bg-red-500/10 text-red-300 border border-red-500/20 hover:bg-red-500/20 truncate max-w-full"
+                      title={ex.url}
+                    >
+                      {ex.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -666,7 +745,7 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
               boxShadow: riskCfg ? `0 0 30px ${riskCfg.bg}` : undefined,
             }}
           >
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div
                   className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
@@ -675,28 +754,82 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
                   <RiskIcon size={24} style={{ color: riskCfg?.color }} />
                 </div>
                 <div>
-                  <div className="text-xl font-bold tracking-tight" style={{ color: riskCfg?.color }}>
-                    {result.prediction === 'PHISHING' ? 'PHISHING DETECTED' : 'SAFE (LEGITIMATE)'}
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                      result.prediction === 'PHISHING' ? 'badge-threat' : 'badge-safe'
+                    }`}>
+                      {result.prediction === 'PHISHING' ? <AlertTriangle size={13} /> : <CheckCircle size={13} />}
+                      <span>{result.prediction === 'PHISHING' ? 'PHISHING DETECTED' : 'SAFE (LEGITIMATE)'}</span>
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 text-slate-300 font-mono">
+                      {riskCfg?.label ?? result.risk_level ?? 'Risk Assessment'}
+                    </span>
                   </div>
-                  <div className="text-xs font-medium text-slate-400 mt-0.5">
-                    {riskCfg?.label ?? 'Evaluation'} — URL Structure Model Estimate
+                  <div className="text-xs font-medium text-slate-400 mt-1">
+                    Model: {result.model_name ?? 'LightGBM'} · Version: {result.model_version ?? 'v2.0.0'}
                   </div>
                 </div>
               </div>
-              <button
-                id="copy-result-btn"
-                onClick={handleCopy}
-                className="btn-ghost text-xs shrink-0 flex items-center gap-1.5 border border-slate-700/60"
-                title="Copy prediction result JSON"
-              >
-                {copied ? <><Check size={14} className="text-emerald-400" /> Copied</> : <><Copy size={14} /> Copy Result</>}
-              </button>
+
+              {/* Action Buttons: Copy URL & Copy Result */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  id="copy-url-btn"
+                  onClick={handleCopyUrl}
+                  className="btn-ghost text-xs flex items-center gap-1.5 border border-slate-700/60"
+                  title="Copy submitted URL to clipboard"
+                  aria-label="Copy URL"
+                >
+                  {copiedUrl ? <><Check size={14} className="text-emerald-400" /> Copied URL</> : <><Copy size={14} /> Copy URL</>}
+                </button>
+                <button
+                  id="copy-result-btn"
+                  onClick={handleCopyResult}
+                  className="btn-ghost text-xs flex items-center gap-1.5 border border-slate-700/60"
+                  title="Copy formatted plain-text result summary"
+                  aria-label="Copy Result"
+                >
+                  {copiedResult ? <><Check size={14} className="text-emerald-400" /> Copied Summary</> : <><Copy size={14} /> Copy Result</>}
+                </button>
+              </div>
             </div>
 
-            {/* URL Display */}
-            <div className="px-3.5 py-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80">
-              <div className="text-[11px] text-slate-500 uppercase tracking-wider mb-0.5 font-semibold">Analyzed URL</div>
-              <div className="font-mono text-sm text-cyan-300 break-all">{result.url}</div>
+            {/* URL Display: strictly non-link, monospace, wrapped, selectable */}
+            <div className="px-3.5 py-3 rounded-lg bg-slate-950/80 border border-slate-800/80">
+              <div className="text-[11px] text-slate-500 uppercase tracking-wider mb-1 font-semibold">Analyzed Target URL (Text Only — Never Visited)</div>
+              <div className="font-mono text-xs md:text-sm text-cyan-300 break-all select-all whitespace-pre-wrap leading-relaxed">
+                {result.url}
+              </div>
+            </div>
+
+            {/* 4-Stat Metric Summary: Confidence, Phishing Prob, Threshold, Risk Level */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+              <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800">
+                <div className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">Calibrated Confidence</div>
+                <div className="text-lg font-bold text-white mt-0.5">
+                  {result.confidence !== null && result.confidence !== undefined ? `${result.confidence.toFixed(1)}%` : '—'}
+                </div>
+              </div>
+              <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800">
+                <div className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">Phishing Probability</div>
+                <div className="text-lg font-bold text-amber-400 mt-0.5">
+                  {result.phishing_probability !== null && result.phishing_probability !== undefined
+                    ? `${(result.phishing_probability * 100).toFixed(1)}%`
+                    : (result.score !== null && result.score !== undefined ? `${(result.score * 100).toFixed(1)}%` : '—')}
+                </div>
+              </div>
+              <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800">
+                <div className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">Decision Threshold</div>
+                <div className="text-lg font-bold text-violet-400 mt-0.5 font-mono">
+                  {result.threshold !== undefined && result.threshold !== null ? result.threshold.toFixed(4) : '0.5000'}
+                </div>
+              </div>
+              <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800">
+                <div className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">Risk Level</div>
+                <div className="text-lg font-bold mt-0.5" style={{ color: riskCfg?.color ?? '#94a3b8' }}>
+                  {result.risk_level ?? 'LOW'}
+                </div>
+              </div>
             </div>
 
             {/* Calibrated Confidence & Score Bar */}
@@ -754,8 +887,16 @@ export default function Scanner({ initialTab = 'single', onSwitchTab }: ScannerP
 
           {/* Visible Disclaimer */}
           <div className="flex items-start gap-3 px-4 py-3.5 rounded-xl text-xs text-slate-400 bg-slate-900/60 border border-slate-800">
-            <Info size={15} className="shrink-0 mt-0.5 text-blue-400" />
-            <p>{result.disclaimer}</p>
+            <Info size={16} className="shrink-0 mt-0.5 text-blue-400" />
+            <div className="space-y-0.5">
+              <div>
+                <strong className="text-slate-300">Disclaimer: </strong>
+                URL-only estimate, not a guarantee.
+              </div>
+              <p className="text-slate-500 text-[11px]">
+                {result.disclaimer || 'Predictions are derived purely from structural and lexical patterns without connecting to the remote host. Do not treat this as definitive security assurance.'}
+              </p>
+            </div>
           </div>
         </div>
       )}

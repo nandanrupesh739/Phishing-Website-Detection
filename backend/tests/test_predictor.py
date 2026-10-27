@@ -256,3 +256,35 @@ class TestPredictUrlWithMockedModel:
         assert res["confidence"] == 99.0
         assert res["confidence_str"] == "99.0%"
         assert res["threshold"] == 0.50
+
+    def test_explanation_field_present_and_limited_to_top_5(self):
+        from backend.predictor import predict_url
+        res = predict_url("https://paypal.com.evil-phish.xyz/login")
+        assert "explanation" in res
+        assert isinstance(res["explanation"], list)
+        assert len(res["explanation"]) <= 5
+        for item in res["explanation"]:
+            assert "feature" in item
+            assert "contribution" in item
+            assert "direction" in item
+            assert item["direction"] in ("PHISHING", "SAFE")
+            assert isinstance(item["contribution"], (float, int))
+
+    def test_explanation_graceful_fallback_when_model_unsupported(self):
+        import backend.predictor as pred_module
+        # Model without booster_ or coef_
+        class UnsupportedModel:
+            def predict_proba(self, X):
+                return np.array([[0.5, 0.5]])
+            def predict(self, X):
+                return np.array([0])
+
+        orig = pred_module._model
+        try:
+            pred_module._model = UnsupportedModel()
+            from backend.predictor import predict_url
+            res = predict_url("https://example.com")
+            assert "explanation" in res
+            assert res["explanation"] == []
+        finally:
+            pred_module._model = orig

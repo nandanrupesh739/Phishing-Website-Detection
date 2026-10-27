@@ -15,6 +15,12 @@ export interface FeatureContribution {
   direction: "PHISHING" | "SAFE";
 }
 
+export interface ExplanationItem {
+  feature: string;
+  contribution: number;
+  direction: "PHISHING" | "SAFE";
+}
+
 export interface PredictionResult {
   url: string;
   prediction: "PHISHING" | "SAFE" | "LIKELY LEGITIMATE" | null;
@@ -23,8 +29,12 @@ export interface PredictionResult {
   score_type: "calibrated_probability" | "model_probability" | "model_score" | "unavailable";
   confidence?: number | null;
   confidence_str?: string;
+  phishing_probability?: number | null;
   threshold?: number;
+  model_version?: string | null;
+  model_name?: string | null;
   indicators: string[];
+  explanation?: ExplanationItem[];
   feature_contributions?: FeatureContribution[];
   features: Record<string, number>;
   disclaimer: string;

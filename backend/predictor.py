@@ -419,17 +419,25 @@ def predict_url(url: str) -> dict:
 
     # ── 7. Return structured result ──────────────────────────────────────
     confidence_str = f"{confidence_pct:.1f}%" if confidence_pct is not None else "N/A"
+    phish_prob = round(prob_phish, 4) if "prob_phish" in locals() and prob_phish is not None else (round(score, 4) if score is not None else None)
+    m_ver = _metadata.get("model_version") if _metadata else (_bundle.get("model_version", "1.0.0") if _bundle else "1.0.0")
+    m_name = _metadata.get("model_name") if _metadata else (_bundle.get("model_name", "LightGBM") if _bundle else "LightGBM")
+
     return {
         "url": url,
         "prediction": prediction_str,
         "confidence": round(confidence_pct, 2) if confidence_pct is not None else None,
         "confidence_str": confidence_str,
+        "phishing_probability": phish_prob,
         "threshold": round(threshold, 4),
         "risk_level": risk_level,
         "score": round(score, 4) if score is not None else None,
         "score_type": score_type,
-        "indicators": indicators,
+        "model_version": m_ver,
+        "model_name": m_name,
+        "explanation": feature_contributions[:5],
         "feature_contributions": feature_contributions,
+        "indicators": indicators,
         "features": {name: round(float(val), 6) for name, val in feat_dict.items()},
         "disclaimer": DISCLAIMER,
     }
