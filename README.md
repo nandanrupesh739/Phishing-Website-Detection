@@ -3,6 +3,7 @@
 <div align="center">
 
 ![PhishGuard AI](https://img.shields.io/badge/PhishGuard-AI-blue?style=for-the-badge&logo=shield&logoColor=white)
+[![CI](https://github.com/nandanrupesh739/Phishing-Website-Detection/actions/workflows/ci.yml/badge.svg)](https://github.com/nandanrupesh739/Phishing-Website-Detection/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.11%20|%203.14-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![LightGBM](https://img.shields.io/badge/LightGBM-4.7-brightgreen?style=for-the-badge)
 ![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black)

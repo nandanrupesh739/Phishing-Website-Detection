@@ -7,30 +7,67 @@ on:
     branches: [ main ]
 
 jobs:
-  backend-test:
-    name: Backend Tests (Pytest)
+  git-leakage-check:
+    name: Repository Leakage Guard
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Assert no datasets, model weights, databases, or secrets are tracked
+        run: |
+          LEAKED=$(git ls-files 'data/*.csv' 'models/*.joblib' 'models/*.pkl' '*.db' '**/*.db' '.env' '**/.env')
+          if [ -n "$LEAKED" ]; then
+            echo "::error::Forbidden files are committed to git:"
+            echo "$LEAKED"
+            exit 1
+          fi
+          echo "Repository is clean: No dataset files, model binaries, databases, or secrets found."
+
+  backend-ci:
+    name: Backend CI (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Run pytest
+      - name: Lint with ruff
         run: |
-          pytest backend/tests/ -v --cov=backend
+          ruff check .
+          ruff format --check .
 
-  frontend-check:
-    name: Frontend Lint, Test & Build
+      - name: Type check with mypy
+        run: |
+          mypy backend
+
+      - name: Run pytest with coverage
+        run: |
+          pytest backend/tests/ -v --cov=backend --cov-report=term --cov-report=xml:coverage.xml --cov-report=html:htmlcov
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage-python-${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            htmlcov/
+
+  frontend-ci:
+    name: Frontend Lint, Test & Build (Node 20)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -39,21 +76,21 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install frontend dependencies
+      - name: Install dependencies
         run: npm ci
 
-      - name: Run linter
+      - name: Run ESLint
         run: npm run lint
 
-      - name: Run frontend tests
+      - name: Run Vitest tests
         run: npm test
 
-      - name: Build frontend production bundle
+      - name: Build production bundle
         run: npm run build
