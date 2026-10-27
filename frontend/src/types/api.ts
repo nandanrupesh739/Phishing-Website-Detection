@@ -127,6 +127,7 @@ export interface FeatureImportance {
 
 export interface ModelMetricsResponse {
   test_metrics: TestMetrics;
+  validation_metrics?: TestMetrics;
   best_model?: string;
   decision_threshold?: number;
   validation_comparison?: Record<string, ValidationEntry>;

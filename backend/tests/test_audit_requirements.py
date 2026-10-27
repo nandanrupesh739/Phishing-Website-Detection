@@ -191,3 +191,84 @@ class TestPredictBatchEndpoint:
         assert len(data["results"]) == 2
         assert "summary" in data
         assert data["summary"]["safe_count"] + data["summary"]["phishing_count"] + data["summary"]["error_count"] == 2
+
+
+class TestDomainGroupedSplit:
+    """Phase 3.1: Zero domain overlap between Train, Validation, and Test splits."""
+
+    def test_domain_split_has_zero_domain_overlap(self):
+        import pandas as pd
+        from train import split_domain_grouped
+
+        # Construct synthetic dataframe spanning multiple registered domains and subdomains
+        data = [
+            {"canonical_url": f"https://sub{i}.google.com/path", "domain_group": "google.com", "label": 0}
+            for i in range(10)
+        ] + [
+            {"canonical_url": f"https://login.paypal.com/{i}", "domain_group": "paypal.com", "label": 0}
+            for i in range(10)
+        ] + [
+            {"canonical_url": f"http://phish{i}.evil.xyz/login", "domain_group": "evil.xyz", "label": 1}
+            for i in range(10)
+        ] + [
+            {"canonical_url": f"http://scam{i}.badsite.top/account", "domain_group": "badsite.top", "label": 1}
+            for i in range(10)
+        ] + [
+            {"canonical_url": f"https://user{i}.github.io/repo", "domain_group": "github.io", "label": 0}
+            for i in range(10)
+        ] + [
+            {"canonical_url": f"https://portal{i}.chase.com/auth", "domain_group": "chase.com", "label": 0}
+            for i in range(10)
+        ]
+        df = pd.DataFrame(data)
+
+        df_train, df_val, df_test = split_domain_grouped(df)
+
+        dom_train = set(df_train["domain_group"])
+        dom_val = set(df_val["domain_group"])
+        dom_test = set(df_test["domain_group"])
+
+        assert len(dom_train & dom_val) == 0, f"Domain overlap between train and val: {dom_train & dom_val}"
+        assert len(dom_train & dom_test) == 0, f"Domain overlap between train and test: {dom_train & dom_test}"
+        assert len(dom_val & dom_test) == 0, f"Domain overlap between val and test: {dom_val & dom_test}"
+
+
+class TestSavedModelPipelineParity:
+    """Phase 2.5: Saved model prediction on a URL equals prediction from pipeline components."""
+
+    def test_saved_model_prediction_equals_pipeline_components(self):
+        import joblib
+        import numpy as np
+        import scipy.sparse
+        from backend.features import normalize_url, extract_url_features, features_to_vector
+
+        if not config.MODEL_PATH.exists():
+            pytest.skip("Model not yet trained")
+
+        bundle = joblib.load(config.MODEL_PATH)
+        model = bundle["model"]
+        scaler = bundle.get("scaler")
+        vectorizer = bundle.get("vectorizer")
+        threshold = float(bundle.get("threshold", 0.50))
+        tld_freq_map = bundle.get("tld_freq_map", {})
+
+        test_url = "https://secure-login.chase123.xyz/account/verify"
+        norm_url = normalize_url(test_url)
+        fd = extract_url_features(test_url, tld_freq_map=tld_freq_map)
+        r_vec = np.array(features_to_vector(fd), dtype=np.float32).reshape(1, -1)
+
+        if scaler is not None and vectorizer is not None:
+            x_tab = scaler.transform(r_vec)
+            x_tf = vectorizer.transform([norm_url])
+            x_inp = scipy.sparse.hstack([x_tab, x_tf])
+        elif scaler is not None:
+            x_inp = scaler.transform(r_vec)
+        else:
+            x_inp = r_vec
+
+        pipeline_prob = float(model.predict_proba(x_inp)[0, 1])
+        pipeline_pred = "PHISHING" if pipeline_prob >= threshold else "SAFE"
+
+        service_res = predict_url(test_url)
+        assert service_res["prediction"] == pipeline_pred
+        assert abs(service_res["score"] - (pipeline_prob if pipeline_pred == "PHISHING" else (1.0 - pipeline_prob))) < 1e-4

@@ -25,6 +25,8 @@ from backend.features import (
     features_to_vector,
     get_risk_indicators,
     normalise_url,
+    normalize_url,
+    set_tld_frequency_map,
 )
 
 log = logging.getLogger(__name__)
@@ -94,6 +96,8 @@ def load_model(force_reload: bool = False) -> Any:
         _model = loaded["model"]
         _scaler = loaded.get("scaler")
         _vectorizer = loaded.get("vectorizer")
+        if "tld_freq_map" in loaded and isinstance(loaded["tld_freq_map"], dict):
+            set_tld_frequency_map(loaded["tld_freq_map"])
     else:
         _bundle = None
         _model = loaded

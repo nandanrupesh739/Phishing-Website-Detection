@@ -9,7 +9,7 @@ const TECH_STACK = [
 ];
 
 const FEATURES = [
-  'URL-string feature extraction (36 structural features + character n-gram TF-IDF, no network requests)',
+  'URL-string feature extraction (42 structural features + character n-gram TF-IDF, no network requests)',
   'Multi-model evaluation: LightGBM, Logistic Regression, Random Forest, Naive Bayes',
   '70/15/15 Domain-Grouped split by registered domain (zero train/val/test domain leakage)',
   'Probability calibration via CalibratedClassifierCV with reliability curve and Brier score',
@@ -171,7 +171,7 @@ export default function About() {
           {[
             ['Load Dataset', 'Detect URL and label columns; validate CSV structure and calculate SHA-256 fingerprint'],
             ['Clean & Normalise', 'Remove missing values and duplicates; apply canonical normalisation across training & inference'],
-            ['Extract Features', '36 structural features via offline tldextract & regex + character n-gram TF-IDF (no network calls)'],
+            ['Extract Features', '42 structural features via offline tldextract & regex + character n-gram TF-IDF (no network calls)'],
             ['Domain-Grouped Split', '70% train / 15% validation / 15% test partitioned by registered domain (zero leakage)'],
             ['Train Candidates', 'Fit LightGBM, Logistic Regression, Random Forest, and Naive Bayes models with class weighting'],
             ['Validation Selection', 'Compare models on validation set; calibrate winning model with CalibratedClassifierCV'],

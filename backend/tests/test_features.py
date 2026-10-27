@@ -26,6 +26,8 @@ from backend.features import (
     features_to_vector,
     get_risk_indicators,
     normalise_url,
+    normalize_url,
+    set_tld_frequency_map,
 )
 
 
@@ -59,7 +61,7 @@ class TestFeatureOrdering:
         assert list(result.keys()) == FEATURE_NAMES
 
     def test_feature_count(self):
-        assert len(FEATURE_NAMES) == 36
+        assert len(FEATURE_NAMES) == 42
 
     def test_vector_length_equals_feature_count(self):
         result = feats("http://example.com")
@@ -71,11 +73,19 @@ class TestFeatureOrdering:
 # 3. URL normalisation parity
 # ---------------------------------------------------------------------------
 class TestNormalisationParity:
-    def test_missing_scheme_defaults_to_https_with_flag(self):
+    def test_normalize_url_returns_identical_canonical_strings(self):
+        u1 = normalize_url("github.com")
+        u2 = normalize_url("https://github.com")
+        u3 = normalize_url("https://www.github.com")
+        assert u1 == "https://github.com"
+        assert u2 == "https://github.com"
+        assert u3 == "https://github.com"
+
+    def test_missing_scheme_defaults_to_neutral_has_https_and_missing_flag(self):
         url = "github.com"
         f = feats(url)
-        assert f["has_https"] == 1.0
         assert f["scheme_missing"] == 1.0
+        assert f["has_https"] == 0.0  # Set neutrally for scheme-less input
 
     def test_explicit_https_has_zero_scheme_missing(self):
         url = "https://github.com"
@@ -90,9 +100,9 @@ class TestNormalisationParity:
         assert f["scheme_missing"] == 0.0
 
     def test_www_stripped_and_host_lowercased(self):
-        c1, _ = normalise_url("WWW.GitHub.COM/path")
-        c2, _ = normalise_url("https://www.github.com/path")
-        c3, _ = normalise_url("https://github.com/path")
+        c1 = normalize_url("WWW.GitHub.COM/path")
+        c2 = normalize_url("https://www.github.com/path")
+        c3 = normalize_url("https://github.com/path")
         assert c1 == "https://github.com/path"
         assert c2 == "https://github.com/path"
         assert c3 == "https://github.com/path"
@@ -101,19 +111,32 @@ class TestNormalisationParity:
         f_bare = feats("github.com/repo/project")
         f_https = feats("https://github.com/repo/project")
         f_www = feats("https://www.github.com/repo/project")
-        # All features except scheme_missing should be identical
+        # All features apart from documented scheme handling (scheme_missing and has_https)
+        # must be strictly identical across bare, https, and https://www URLs
+        scheme_keys = {"scheme_missing", "has_https"}
         for k in FEATURE_NAMES:
-            if k == "scheme_missing":
-                assert f_bare[k] == 1.0
-                assert f_https[k] == 0.0
-            else:
+            if k not in scheme_keys:
                 assert f_bare[k] == f_https[k] == f_www[k], f"Mismatch for feature {k}"
+        assert f_bare["scheme_missing"] == 1.0
+        assert f_bare["has_https"] == 0.0
+        assert f_https["scheme_missing"] == 0.0
+        assert f_https["has_https"] == 1.0
+        assert f_www["scheme_missing"] == 0.0
+        assert f_www["has_https"] == 1.0
 
 
 # ---------------------------------------------------------------------------
 # 4. Public Suffix List & TLD features
 # ---------------------------------------------------------------------------
 class TestPublicSuffixAndTLD:
+    def test_tldextract_multi_label_subdomain_counts(self):
+        # Multi-label PSL suffixes: .co.in, .ac.in, .co.uk
+        assert feats("https://abc.co.in")["num_subdomains"] == 0.0
+        assert feats("https://abc.ac.in")["num_subdomains"] == 0.0
+        assert feats("https://x.co.uk")["num_subdomains"] == 0.0
+        assert feats("https://sub.abc.co.in")["num_subdomains"] == 1.0
+        assert feats("https://a.b.x.co.uk")["num_subdomains"] == 2.0
+
     def test_tldextract_subdomain_count(self):
         # co.uk is recognized as public suffix by bundled PSL
         f1 = feats("https://sub.example.co.uk")
@@ -129,11 +152,22 @@ class TestPublicSuffixAndTLD:
         assert feats("https://bank-login.xyz")["has_suspicious_tld"] == 1.0
         assert feats("https://verify-account.top")["has_suspicious_tld"] == 1.0
         assert feats("https://update.buzz")["has_suspicious_tld"] == 1.0
+        assert feats("https://update.click")["has_suspicious_tld"] == 1.0
+        assert feats("https://update.icu")["has_suspicious_tld"] == 1.0
 
     def test_benign_tld_not_flagged(self):
         assert feats("https://google.com")["has_suspicious_tld"] == 0.0
         assert feats("https://mit.edu")["has_suspicious_tld"] == 0.0
         assert feats("https://gov.uk")["has_suspicious_tld"] == 0.0
+
+    def test_tld_frequency_encoding(self):
+        set_tld_frequency_map({"com": 0.60, "org": 0.15})
+        f_com = feats("https://example.com")
+        assert abs(f_com["tld_frequency"] - 0.60) < 1e-5
+        f_org = feats("https://example.org")
+        assert abs(f_org["tld_frequency"] - 0.15) < 1e-5
+        f_net = feats("https://example.net")
+        assert f_net["tld_frequency"] == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -143,21 +177,35 @@ class TestBrandImpersonation:
     def test_paypal_subdomain_spoof_flagged(self):
         # paypal appears in subdomain while registered domain is evil.xyz
         f = feats("https://paypal.com.evil.xyz/login")
+        assert f["brand_in_wrong_place"] == 1.0
         assert f["has_brand_impersonation"] == 1.0
 
     def test_paypal_path_spoof_flagged(self):
         # paypal appears in path on unrelated domain
         f = feats("https://evil.xyz/paypal/signin")
+        assert f["brand_in_wrong_place"] == 1.0
         assert f["has_brand_impersonation"] == 1.0
 
     def test_legitimate_paypal_not_flagged(self):
-        # registered domain is paypal.com; should NOT be flagged as impersonating paypal
+        # registered domain is paypal.com; should NOT be flagged
         f = feats("https://paypal.com/signin")
+        assert f["brand_in_wrong_place"] == 0.0
         assert f["has_brand_impersonation"] == 0.0
 
     def test_legitimate_subdomain_paypal_not_flagged(self):
         f = feats("https://checkout.paypal.com/pay")
+        assert f["brand_in_wrong_place"] == 0.0
         assert f["has_brand_impersonation"] == 0.0
+
+    def test_google_legitimate_not_flagged(self):
+        # https://www.google.com and accounts.google.com must NOT be flagged
+        f1 = feats("https://www.google.com")
+        assert f1["brand_in_wrong_place"] == 0.0
+        assert f1["has_brand_impersonation"] == 0.0
+
+        f2 = feats("https://accounts.google.com")
+        assert f2["brand_in_wrong_place"] == 0.0
+        assert f2["has_brand_impersonation"] == 0.0
 
     def test_suspicious_terms_in_subdomain_or_path(self):
         # Term in path
@@ -183,10 +231,14 @@ class TestObfuscationSeparators:
         # But it IS recorded in has_double_slash_in_path
         assert f["has_double_slash_in_path"] == 1.0
 
-    def test_obfuscation_separators_flagged(self):
+    def test_normal_equals_in_query_not_flagged_as_obfuscation(self):
+        # Normal '==' e.g. base64 padding or parameter value is NOT flagged
+        f = feats("https://example.com/path?token=abc==")
+        assert f["has_repeated_separators"] == 0.0
+
+    def test_real_obfuscation_separators_flagged(self):
         assert feats("https://example.com/path?a=1&&b=2")["has_repeated_separators"] == 1.0
         assert feats("https://example.com/path??q=1")["has_repeated_separators"] == 1.0
-        assert feats("https://example.com/path==token")["has_repeated_separators"] == 1.0
         assert feats("https://example.com///evil.com")["has_repeated_separators"] == 1.0
 
 
@@ -194,9 +246,24 @@ class TestObfuscationSeparators:
 # 7. Additional URL-Only Features
 # ---------------------------------------------------------------------------
 class TestNewFeatures:
-    def test_domain_num_digits(self):
+    def test_domain_digit_count(self):
+        assert feats("https://chase123.com")["domain_digit_count"] == 3.0
         assert feats("https://chase123.com")["domain_num_digits"] == 3.0
-        assert feats("https://chase.com")["domain_num_digits"] == 0.0
+        assert feats("https://chase.com")["domain_digit_count"] == 0.0
+
+    def test_domain_hyphen_count(self):
+        assert feats("https://my-secure-bank.com")["domain_hyphen_count"] == 2.0
+        assert feats("https://chase.com")["domain_hyphen_count"] == 0.0
+
+    def test_vowel_consonant_ratio(self):
+        # "google" -> 3 vowels (o,o,e), 3 consonants (g,g,l) -> ratio = 1.0
+        f_google = feats("https://google.com")
+        assert abs(f_google["vowel_consonant_ratio"] - 1.0) < 0.01
+
+    def test_digit_to_letter_ratio(self):
+        # "bank12" -> 2 digits, 4 letters -> 2/4 = 0.50
+        f = feats("https://bank12.com")
+        assert abs(f["digit_to_letter_ratio"] - 0.50) < 0.01
 
     def test_longest_token_length(self):
         f = feats("https://example.com/a/supercalifragilisticexpialidocious/b")

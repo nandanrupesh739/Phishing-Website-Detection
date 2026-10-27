@@ -70,6 +70,8 @@ RANDOM_SEED = 42
 TRAIN_SIZE = 0.70
 VAL_SIZE   = 0.15
 TEST_SIZE  = 0.15
+TARGET_PHISHING_RECALL = float(os.getenv("TARGET_PHISHING_RECALL", "0.98"))
+MODEL_VERSION = os.getenv("MODEL_VERSION", "2.0.0")
 
 # ──────────────────────────────────────────────
 # Feature extraction constants
@@ -112,7 +114,7 @@ SUSPICIOUS_TLDS = {
     "work", "shop", "icu", "vip", "fit", "live", "link", "guru",
     "surf", "casa", "loan", "men", "country", "stream", "download",
     "racing", "win", "bid", "party", "date", "faith", "review",
-    "trade", "cricket", "accountant", "science",
+    "trade", "cricket", "accountant", "science", "click",
 }
 
 # Hostname length threshold for "unusually long hostname"

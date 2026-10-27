@@ -1,137 +1,225 @@
 {
   "best_model": "LightGBM (Tabular + TF-IDF)",
-  "decision_threshold": 0.875,
+  "decision_threshold": 0.95,
   "test_metrics": {
     "model_name": "LightGBM (Tabular + TF-IDF)",
-    "accuracy": 0.9936,
-    "precision": 0.9999,
-    "recall": 0.9845,
-    "f1": 0.9922,
-    "roc_auc": 0.9981,
+    "accuracy": 0.9934,
+    "precision": 1.0,
+    "recall": 0.9839,
+    "f1": 0.9919,
+    "roc_auc": 0.998,
     "average_precision": 0.9983,
-    "brier_score": 0.0044,
+    "brier_score": 0.0042,
     "false_positive_rate": 0.0,
-    "decision_threshold": 0.875,
+    "decision_threshold": 0.95,
     "confusion_matrix": [
       [
-        20114,
+        20115,
+        0
+      ],
+      [
+        227,
+        13835
+      ]
+    ]
+  },
+  "validation_metrics": {
+    "model_name": "LightGBM (Tabular + TF-IDF)",
+    "accuracy": 0.9947,
+    "precision": 0.9999,
+    "recall": 0.9875,
+    "f1": 0.9937,
+    "roc_auc": 0.9984,
+    "average_precision": 0.9986,
+    "brier_score": 0.0037,
+    "false_positive_rate": 0.0,
+    "decision_threshold": 0.95,
+    "confusion_matrix": [
+      [
+        20147,
         1
       ],
       [
-        218,
-        13844
+        187,
+        14809
       ]
     ]
   },
   "validation_comparison": {
     "LightGBM (Tabular + TF-IDF)": {
-      "accuracy": 0.9955,
-      "precision": 0.9987,
+      "accuracy": 0.9958,
+      "precision": 0.9992,
       "recall": 0.9909,
-      "f1": 0.9947,
-      "roc_auc": 0.9986,
-      "fit_time_s": 19.13
+      "f1": 0.995,
+      "roc_auc": 0.9985,
+      "average_precision": 0.9987,
+      "brier_score": 0.0038,
+      "cv_f1_mean": 0.9951,
+      "cv_f1_std": 0.0013
     },
     "Logistic Regression (Tabular + TF-IDF)": {
-      "accuracy": 0.9924,
-      "precision": 0.9977,
-      "recall": 0.9845,
-      "f1": 0.991,
-      "roc_auc": 0.9983,
-      "fit_time_s": 2.06
+      "accuracy": 0.9935,
+      "precision": 0.9983,
+      "recall": 0.9865,
+      "f1": 0.9924,
+      "roc_auc": 0.9989,
+      "average_precision": 0.999,
+      "brier_score": 0.0053,
+      "cv_f1_mean": 0.9905,
+      "cv_f1_std": 0.0035
     },
-    "Random Forest (Tabular 36)": {
-      "accuracy": 0.9954,
-      "precision": 0.9984,
-      "recall": 0.9907,
-      "f1": 0.9945,
+    "Random Forest (Tabular 42)": {
+      "accuracy": 0.9956,
+      "precision": 0.9985,
+      "recall": 0.9911,
+      "f1": 0.9948,
       "roc_auc": 0.9979,
-      "fit_time_s": 10.18
+      "average_precision": 0.9983,
+      "brier_score": 0.0048,
+      "cv_f1_mean": 0.9953,
+      "cv_f1_std": 0.0006
     },
     "Naive Bayes (Char TF-IDF)": {
-      "accuracy": 0.9405,
-      "precision": 0.9829,
-      "recall": 0.8758,
-      "f1": 0.9263,
-      "roc_auc": 0.9592,
-      "fit_time_s": 0.09
+      "accuracy": 0.9756,
+      "precision": 0.9801,
+      "recall": 0.9623,
+      "f1": 0.9711,
+      "roc_auc": 0.9952,
+      "average_precision": 0.9949,
+      "brier_score": 0.0194,
+      "cv_f1_mean": 0.9672,
+      "cv_f1_std": 0.0149
+    }
+  },
+  "cross_validation_results": {
+    "LightGBM (Tabular + TF-IDF)": {
+      "f1_mean": 0.9951,
+      "f1_std": 0.0013,
+      "accuracy_mean": 0.9958,
+      "accuracy_std": 0.0011,
+      "roc_auc_mean": 0.9983,
+      "roc_auc_std": 0.0001
+    },
+    "Logistic Regression (Tabular + TF-IDF)": {
+      "f1_mean": 0.9905,
+      "f1_std": 0.0035,
+      "accuracy_mean": 0.9919,
+      "accuracy_std": 0.0029,
+      "roc_auc_mean": 0.9983,
+      "roc_auc_std": 0.0001
+    },
+    "Random Forest (Tabular 42)": {
+      "f1_mean": 0.9953,
+      "f1_std": 0.0006,
+      "accuracy_mean": 0.996,
+      "accuracy_std": 0.0005,
+      "roc_auc_mean": 0.9979,
+      "roc_auc_std": 0.0002
+    },
+    "Naive Bayes (Char TF-IDF)": {
+      "f1_mean": 0.9672,
+      "f1_std": 0.0149,
+      "accuracy_mean": 0.9724,
+      "accuracy_std": 0.012,
+      "roc_auc_mean": 0.9943,
+      "roc_auc_std": 0.0025
     }
   },
   "feature_importances": [
     {
       "feature": "url_length",
-      "importance": 267.0
-    },
-    {
-      "feature": "path_length",
-      "importance": 250.0
-    },
-    {
-      "feature": "num_subdomains",
-      "importance": 214.0
+      "importance": 481.0
     },
     {
       "feature": "hostname_entropy",
-      "importance": 193.0
+      "importance": 350.0
     },
     {
-      "feature": "domain_vowel_ratio",
-      "importance": 161.0
+      "feature": "path_length",
+      "importance": 312.0
     },
     {
-      "feature": "has_suspicious_tld",
-      "importance": 105.0
+      "feature": "tld_frequency",
+      "importance": 307.0
+    },
+    {
+      "feature": "vowel_consonant_ratio",
+      "importance": 283.0
+    },
+    {
+      "feature": "num_subdomains",
+      "importance": 265.0
     },
     {
       "feature": "longest_token_length",
-      "importance": 103.0
+      "importance": 180.0
     },
     {
       "feature": "num_digits",
-      "importance": 99.0
-    },
-    {
-      "feature": "digit_ratio",
-      "importance": 81.0
+      "importance": 125.0
     },
     {
       "feature": "num_hyphens",
-      "importance": 74.0
+      "importance": 91.0
+    },
+    {
+      "feature": "digit_ratio",
+      "importance": 85.0
+    },
+    {
+      "feature": "has_suspicious_tld",
+      "importance": 81.0
     },
     {
       "feature": "hostname_length",
-      "importance": 40.0
+      "importance": 28.0
+    },
+    {
+      "feature": "domain_hyphen_count",
+      "importance": 27.0
     },
     {
       "feature": "num_dots",
-      "importance": 32.0
+      "importance": 26.0
     },
     {
-      "feature": "domain_num_digits",
+      "feature": "digit_to_letter_ratio",
       "importance": 16.0
+    },
+    {
+      "feature": "has_suspicious_terms",
+      "importance": 11.0
+    },
+    {
+      "feature": "has_double_extension",
+      "importance": 10.0
+    },
+    {
+      "feature": "domain_vowel_ratio",
+      "importance": 8.0
+    },
+    {
+      "feature": "brand_in_wrong_place",
+      "importance": 5.0
+    },
+    {
+      "feature": "domain_digit_count",
+      "importance": 5.0
     },
     {
       "feature": "has_https",
       "importance": 2.0
     },
     {
-      "feature": "is_url_shortener",
-      "importance": 2.0
+      "feature": "num_query_params",
+      "importance": 1.0
     },
     {
       "feature": "has_punycode",
-      "importance": 2.0
-    },
-    {
-      "feature": "has_brand_impersonation",
       "importance": 1.0
     },
     {
       "feature": "num_at_symbols",
-      "importance": 0.0
-    },
-    {
-      "feature": "num_query_params",
       "importance": 0.0
     },
     {
@@ -151,7 +239,7 @@
       "importance": 0.0
     },
     {
-      "feature": "has_suspicious_terms",
+      "feature": "is_url_shortener",
       "importance": 0.0
     },
     {
@@ -183,11 +271,15 @@
       "importance": 0.0
     },
     {
-      "feature": "path_depth",
+      "feature": "has_brand_impersonation",
       "importance": 0.0
     },
     {
-      "feature": "has_double_extension",
+      "feature": "domain_num_digits",
+      "importance": 0.0
+    },
+    {
+      "feature": "path_depth",
       "importance": 0.0
     },
     {
