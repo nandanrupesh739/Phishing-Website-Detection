@@ -24,8 +24,8 @@ import joblib
 import numpy as np
 import pandas as pd
 import scipy.sparse
-from sklearn.model_selection import GroupShuffleSplit
 import tldextract
+from sklearn.model_selection import GroupShuffleSplit
 from tqdm import tqdm
 
 warnings.filterwarnings("ignore")
@@ -200,10 +200,23 @@ def main():
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     csv_path = REPORTS_DIR / "error_analysis.csv"
     csv_fields = [
-        "error_type", "rank", "url", "actual", "predicted", "probability", "confidence_pct",
-        "url_length", "longest_token_length", "path_depth", "domain_digit_count",
-        "vowel_consonant_ratio", "brand_in_wrong_place", "has_suspicious_terms",
-        "has_suspicious_tld", "has_repeated_separators", "triggers"
+        "error_type",
+        "rank",
+        "url",
+        "actual",
+        "predicted",
+        "probability",
+        "confidence_pct",
+        "url_length",
+        "longest_token_length",
+        "path_depth",
+        "domain_digit_count",
+        "vowel_consonant_ratio",
+        "brand_in_wrong_place",
+        "has_suspicious_terms",
+        "has_suspicious_tld",
+        "has_repeated_separators",
+        "triggers",
     ]
 
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
@@ -225,14 +238,18 @@ def main():
     # Also save rich JSON for reference
     json_path = REPORTS_DIR / "error_analysis.json"
     with open(json_path, "w", encoding="utf-8") as f:
-        json.dump({
-            "test_set_size": len(df_test),
-            "total_false_positives": len(false_positives),
-            "total_false_negatives": len(false_negatives),
-            "decision_threshold": threshold,
-            "top_25_false_positives": top_25_fp,
-            "top_25_false_negatives": top_25_fn,
-        }, f, indent=2)
+        json.dump(
+            {
+                "test_set_size": len(df_test),
+                "total_false_positives": len(false_positives),
+                "total_false_negatives": len(false_negatives),
+                "decision_threshold": threshold,
+                "top_25_false_positives": top_25_fp,
+                "top_25_false_negatives": top_25_fn,
+            },
+            f,
+            indent=2,
+        )
 
     # Print Top 5 Discovered Error Patterns
     print("\n" + "=" * 75)

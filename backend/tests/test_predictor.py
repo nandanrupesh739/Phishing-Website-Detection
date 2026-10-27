@@ -9,6 +9,7 @@ Tests validate:
 
 No real URLs are visited. No real model file is required for validation tests.
 """
+
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -24,10 +25,10 @@ from backend.predictor import (
     validate_url,
 )
 
-
 # ---------------------------------------------------------------------------
 # URL Validation
 # ---------------------------------------------------------------------------
+
 
 class TestValidateUrl:
     def test_valid_http_url(self):
@@ -102,6 +103,7 @@ class TestValidateUrl:
 # Risk Level Mapping
 # ---------------------------------------------------------------------------
 
+
 class TestRiskLevelMapping:
     def test_high_confidence_phishing(self):
         assert _map_risk_level(0.95, 1) == "CRITICAL"
@@ -122,6 +124,7 @@ class TestRiskLevelMapping:
 # ModelNotFoundError when model is missing
 # ---------------------------------------------------------------------------
 
+
 class TestModelNotFound:
     def test_load_model_raises_when_absent(self):
         """Patching model paths to non-existent files should raise ModelNotFoundError."""
@@ -132,8 +135,10 @@ class TestModelNotFound:
 
         fake_path = Path("/nonexistent/path/model.pkl")
         fake_joblib = Path("/nonexistent/path/model.joblib")
-        with patch.object(pred_module, "MODEL_PKL_PATH", fake_path), \
-             patch.object(pred_module, "MODEL_PATH", fake_joblib):
+        with (
+            patch.object(pred_module, "MODEL_PKL_PATH", fake_path),
+            patch.object(pred_module, "MODEL_PATH", fake_joblib),
+        ):
             with pytest.raises(ModelNotFoundError):
                 pred_module.load_model(force_reload=True)
 
@@ -141,6 +146,7 @@ class TestModelNotFound:
 # ---------------------------------------------------------------------------
 # predict_url with mocked model
 # ---------------------------------------------------------------------------
+
 
 class TestPredictUrlWithMockedModel:
     """Use a mock pipeline to test predict_url response structure."""
@@ -150,7 +156,7 @@ class TestPredictUrlWithMockedModel:
         import backend.predictor as pred_module
 
         mock_pipe = MagicMock()
-        mock_pipe.predict.return_value = np.array([1])           # phishing = 1
+        mock_pipe.predict.return_value = np.array([1])  # phishing = 1
         mock_pipe.predict_proba.return_value = np.array([[0.02, 0.98]])  # P(SAFE)=0.02, P(PHISH)=0.98
 
         pred_module._model = mock_pipe
@@ -171,6 +177,7 @@ class TestPredictUrlWithMockedModel:
 
     def test_phishing_prediction_structure(self):
         from backend.predictor import predict_url
+
         result = predict_url("http://192.168.1.1/login")
 
         assert "url" in result
@@ -185,52 +192,62 @@ class TestPredictUrlWithMockedModel:
 
     def test_phishing_prediction_value(self):
         from backend.predictor import predict_url
+
         result = predict_url("http://192.168.1.1/login")
         assert result["prediction"] == "PHISHING"
 
     def test_score_is_float(self):
         from backend.predictor import predict_url
+
         result = predict_url("http://evil.example.com/verify")
         assert isinstance(result["score"], float)
 
     def test_indicators_is_list(self):
         from backend.predictor import predict_url
+
         result = predict_url("http://bit.ly/phish")
         assert isinstance(result["indicators"], list)
 
     def test_features_dict_has_correct_count(self):
-        from backend.predictor import predict_url
         from backend.features import FEATURE_NAMES
+        from backend.predictor import predict_url
+
         result = predict_url("http://example.com")
         assert len(result["features"]) == len(FEATURE_NAMES)
 
     def test_invalid_url_returns_error(self):
         from backend.predictor import predict_url
+
         result = predict_url("")
         assert result.get("prediction") is None
         assert "error" in result
 
     def test_javascript_scheme_rejected(self):
         from backend.predictor import predict_url
+
         result = predict_url("javascript:alert('xss')")
         assert result.get("prediction") is None
 
     def test_legitimate_prediction(self):
         import backend.predictor as pred_module
+
         pred_module._model.predict.return_value = np.array([0])  # safe = 0
         pred_module._model.predict_proba.return_value = np.array([[0.95, 0.05]])
 
         from backend.predictor import predict_url
+
         result = predict_url("https://www.google.com/search?q=test")
         assert result["prediction"] == "SAFE"
         assert result["risk_level"] == "LOW"
 
     def test_threshold_applied_in_prediction(self):
         import backend.predictor as pred_module
+
         # Set a custom high threshold: 0.80
         pred_module._metadata = {"decision_threshold": 0.80}
 
         from backend.predictor import predict_url
+
         # P(phish) = 0.70 < 0.80 threshold -> SAFE
         pred_module._model.predict_proba.return_value = np.array([[0.30, 0.70]])
         res_below = predict_url("https://borderline-site.com")
@@ -245,10 +262,12 @@ class TestPredictUrlWithMockedModel:
 
     def test_confidence_and_threshold_returned(self):
         import backend.predictor as pred_module
+
         pred_module._model.predict_proba.return_value = np.array([[0.01, 0.99]])
         pred_module._metadata = {"decision_threshold": 0.50}
 
         from backend.predictor import predict_url
+
         res = predict_url("https://very-evil.com/login")
         assert "confidence" in res
         assert "confidence_str" in res
@@ -259,6 +278,7 @@ class TestPredictUrlWithMockedModel:
 
     def test_explanation_field_present_and_limited_to_top_5(self):
         from backend.predictor import predict_url
+
         res = predict_url("https://paypal.com.evil-phish.xyz/login")
         assert "explanation" in res
         assert isinstance(res["explanation"], list)
@@ -272,10 +292,12 @@ class TestPredictUrlWithMockedModel:
 
     def test_explanation_graceful_fallback_when_model_unsupported(self):
         import backend.predictor as pred_module
+
         # Model without booster_ or coef_
         class UnsupportedModel:
             def predict_proba(self, X):
                 return np.array([[0.5, 0.5]])
+
             def predict(self, X):
                 return np.array([0])
 
@@ -283,6 +305,7 @@ class TestPredictUrlWithMockedModel:
         try:
             pred_module._model = UnsupportedModel()
             from backend.predictor import predict_url
+
             res = predict_url("https://example.com")
             assert "explanation" in res
             assert res["explanation"] == []

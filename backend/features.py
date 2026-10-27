@@ -68,48 +68,48 @@ def get_tld_frequency_map() -> dict[str, float]:
 # Ordered feature name list (42 features)
 # ---------------------------------------------------------------------------
 FEATURE_NAMES: list[str] = [
-    "url_length",                # 1:  Total character length of normalized URL
-    "hostname_length",           # 2:  Length of hostname component
-    "num_dots",                  # 3:  Number of dots in URL
-    "num_hyphens",               # 4:  Number of hyphens in URL
-    "num_at_symbols",            # 5:  Number of @ characters in URL
-    "num_digits",                # 6:  Total digit characters in URL
-    "num_subdomains",            # 7:  Subdomain count via PSL (excluding 'www')
-    "path_length",               # 8:  Character length of path
-    "num_query_params",          # 9:  Count of query parameters
-    "num_percent_encoded",       # 10: Count of %XX hex escapes
-    "num_suspicious_chars",      # 11: Suspicious punctuation count
-    "has_ip_hostname",           # 12: Binary flag: hostname is IPv4/IPv6 literal
-    "has_non_default_port",      # 13: Binary flag: explicit non-standard port
-    "has_https",                 # 14: Binary flag: HTTPS protocol used
-    "is_url_shortener",          # 15: Binary flag: hostname/domain is known shortener
-    "has_suspicious_terms",      # 16: Binary flag: keyword in path/query/subdomain (not domain)
-    "has_repeated_separators",   # 17: Binary flag: obfuscation repeated delimiters (&&, ??, ==, 3+ slashes)
-    "has_long_hostname",         # 18: Binary flag: hostname exceeds length threshold
-    "hostname_entropy",          # 19: Shannon entropy of hostname (bits/char)
-    "digit_ratio",               # 20: Ratio of digits to total characters
-    "has_punycode",              # 21: Binary flag: punycode (xn--) in hostname
-    "has_non_ascii_hostname",    # 22: Binary flag: non-ASCII characters in host
-    "has_at_before_host",        # 23: Binary flag: @ appears in netloc / before host
-    "has_unusual_encoding",      # 24: Binary flag: high count of encoded bytes
-    "num_special_chars",         # 25: Special character count outside standard RFC sets
-    "scheme_missing",            # 26: Binary flag: original input had no protocol scheme
-    "has_suspicious_tld",        # 27: Binary flag: TLD is in high-risk phishing TLD set
-    "tld_frequency",             # 28: Relative frequency of TLD in training corpus
-    "brand_in_wrong_place",      # 29: Binary flag: brand appears outside registered domain
-    "has_brand_impersonation",   # 30: Alias for brand_in_wrong_place
-    "domain_digit_count",        # 31: Count of digits within registered domain label
-    "domain_num_digits",         # 32: Alias for domain_digit_count
-    "domain_hyphen_count",       # 33: Count of hyphens within registered domain label
-    "longest_token_length",      # 34: Length of the longest token (split on . - / _ ? =)
-    "path_depth",                # 35: Number of directory segments in path
-    "vowel_consonant_ratio",     # 36: Vowel to consonant ratio of registered domain label
-    "domain_vowel_ratio",        # 37: Vowel to letter ratio of registered domain label
-    "digit_to_letter_ratio",     # 38: Ratio of digits to letters in registered domain label
-    "has_double_extension",      # 39: Binary flag: double file extension (e.g. .php.html)
-    "has_at_in_path",            # 40: Binary flag: @ appears in URL path or query
+    "url_length",  # 1:  Total character length of normalized URL
+    "hostname_length",  # 2:  Length of hostname component
+    "num_dots",  # 3:  Number of dots in URL
+    "num_hyphens",  # 4:  Number of hyphens in URL
+    "num_at_symbols",  # 5:  Number of @ characters in URL
+    "num_digits",  # 6:  Total digit characters in URL
+    "num_subdomains",  # 7:  Subdomain count via PSL (excluding 'www')
+    "path_length",  # 8:  Character length of path
+    "num_query_params",  # 9:  Count of query parameters
+    "num_percent_encoded",  # 10: Count of %XX hex escapes
+    "num_suspicious_chars",  # 11: Suspicious punctuation count
+    "has_ip_hostname",  # 12: Binary flag: hostname is IPv4/IPv6 literal
+    "has_non_default_port",  # 13: Binary flag: explicit non-standard port
+    "has_https",  # 14: Binary flag: HTTPS protocol used
+    "is_url_shortener",  # 15: Binary flag: hostname/domain is known shortener
+    "has_suspicious_terms",  # 16: Binary flag: keyword in path/query/subdomain (not domain)
+    "has_repeated_separators",  # 17: Binary flag: obfuscation repeated delimiters (&&, ??, ==, 3+ slashes)
+    "has_long_hostname",  # 18: Binary flag: hostname exceeds length threshold
+    "hostname_entropy",  # 19: Shannon entropy of hostname (bits/char)
+    "digit_ratio",  # 20: Ratio of digits to total characters
+    "has_punycode",  # 21: Binary flag: punycode (xn--) in hostname
+    "has_non_ascii_hostname",  # 22: Binary flag: non-ASCII characters in host
+    "has_at_before_host",  # 23: Binary flag: @ appears in netloc / before host
+    "has_unusual_encoding",  # 24: Binary flag: high count of encoded bytes
+    "num_special_chars",  # 25: Special character count outside standard RFC sets
+    "scheme_missing",  # 26: Binary flag: original input had no protocol scheme
+    "has_suspicious_tld",  # 27: Binary flag: TLD is in high-risk phishing TLD set
+    "tld_frequency",  # 28: Relative frequency of TLD in training corpus
+    "brand_in_wrong_place",  # 29: Binary flag: brand appears outside registered domain
+    "has_brand_impersonation",  # 30: Alias for brand_in_wrong_place
+    "domain_digit_count",  # 31: Count of digits within registered domain label
+    "domain_num_digits",  # 32: Alias for domain_digit_count
+    "domain_hyphen_count",  # 33: Count of hyphens within registered domain label
+    "longest_token_length",  # 34: Length of the longest token (split on . - / _ ? =)
+    "path_depth",  # 35: Number of directory segments in path
+    "vowel_consonant_ratio",  # 36: Vowel to consonant ratio of registered domain label
+    "domain_vowel_ratio",  # 37: Vowel to letter ratio of registered domain label
+    "digit_to_letter_ratio",  # 38: Ratio of digits to letters in registered domain label
+    "has_double_extension",  # 39: Binary flag: double file extension (e.g. .php.html)
+    "has_at_in_path",  # 40: Binary flag: @ appears in URL path or query
     "has_double_slash_in_path",  # 41: Binary flag: // appears in path
-    "has_ip_in_path",            # 42: Binary flag: IPv4 address pattern in path or query
+    "has_ip_in_path",  # 42: Binary flag: IPv4 address pattern in path or query
 ]
 
 
@@ -179,13 +179,15 @@ def normalize_url(raw_url: str) -> str:
             pass
 
         netloc = f"{userinfo}{host}{port_part}"
-        return urllib.parse.urlunsplit((
-            scheme,
-            netloc,
-            parsed.path or "",
-            parsed.query or "",
-            parsed.fragment or "",
-        ))
+        return urllib.parse.urlunsplit(
+            (
+                scheme,
+                netloc,
+                parsed.path or "",
+                parsed.query or "",
+                parsed.fragment or "",
+            )
+        )
     except Exception:
         return url_with_scheme
 
@@ -309,14 +311,11 @@ def extract_url_features(
     feats["num_percent_encoded"] = float(len(_RE_PERCENT.findall(norm_url)))
 
     # ── Feature 11: Suspicious punctuation characters ─────────────────────
-    feats["num_suspicious_chars"] = float(
-        sum(ch in _SUSPICIOUS_PUNCTS for ch in norm_url)
-    )
+    feats["num_suspicious_chars"] = float(sum(ch in _SUSPICIOUS_PUNCTS for ch in norm_url))
 
     # ── Feature 25: Special characters ────────────────────────────────────
     special = set(norm_url) - set(
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-        "0123456789-._~:/?#[]@!$&'()*+,;=%"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?#[]@!$&'()*+,;=%"
     )
     feats["num_special_chars"] = float(len(special))
 
@@ -387,17 +386,13 @@ def extract_url_features(
     feats["has_https"] = float(scheme == "https" and not scheme_missing)
 
     # ── Feature 15: URL shortener ─────────────────────────────────────────
-    feats["is_url_shortener"] = float(
-        hostname in URL_SHORTENERS or reg_domain in URL_SHORTENERS
-    )
+    feats["is_url_shortener"] = float(hostname in URL_SHORTENERS or reg_domain in URL_SHORTENERS)
 
     # ── Outside registered domain text (subdomain, path, query) ───────────
     outside_text = f"{subdomain} {path} {query}".lower()
 
     # ── Feature 16: Suspicious terms in path/query/subdomain ──────────────
-    feats["has_suspicious_terms"] = float(
-        any(term in outside_text for term in SUSPICIOUS_TERMS)
-    )
+    feats["has_suspicious_terms"] = float(any(term in outside_text for term in SUSPICIOUS_TERMS))
 
     # ── Feature 18: Unusually long hostname ───────────────────────────────
     feats["has_long_hostname"] = float(len(hostname) > LONG_HOSTNAME_THRESHOLD)
@@ -420,9 +415,7 @@ def extract_url_features(
 
     # ── Feature 27: Suspicious TLD ────────────────────────────────────────
     tld_parts = set(tld_suffix.split("."))
-    feats["has_suspicious_tld"] = float(
-        bool(tld_suffix in SUSPICIOUS_TLDS or (tld_parts & SUSPICIOUS_TLDS))
-    )
+    feats["has_suspicious_tld"] = float(bool(tld_suffix in SUSPICIOUS_TLDS or (tld_parts & SUSPICIOUS_TLDS)))
 
     # ── Feature 28: TLD Frequency encoding (training set only) ────────────
     freq_source = tld_freq_map if tld_freq_map is not None else _TLD_FREQUENCY_MAP
@@ -508,7 +501,9 @@ def get_risk_indicators(feat_dict: Dict[str, float]) -> list[str]:
     if feat_dict.get("has_suspicious_tld"):
         indicators.append("Domain uses a top-level domain (TLD) frequently associated with malicious campaigns")
     if feat_dict.get("has_suspicious_terms"):
-        indicators.append("URL path, query, or subdomain contains sensitive security keywords (e.g. login, verify, account)")
+        indicators.append(
+            "URL path, query, or subdomain contains sensitive security keywords (e.g. login, verify, account)"
+        )
     if feat_dict.get("has_punycode"):
         indicators.append("Hostname contains punycode (IDN) encoding — possible homograph attack")
     if feat_dict.get("has_non_ascii_hostname"):

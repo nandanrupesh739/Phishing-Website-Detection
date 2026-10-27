@@ -13,6 +13,7 @@ Comprehensive test suite verifying:
   9. Zero domain overlap between train / validation / test splits
  10. Zero-network static analysis guarantee (network socket monkeypatch)
 """
+
 from __future__ import annotations
 
 import json
@@ -23,11 +24,20 @@ import urllib.request
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-import pandas as pd
 import numpy as np
+import pandas as pd
+import pytest
 
 import backend.config as config
+from backend.app import app
+from backend.database import (
+    _get_conn,
+    clear_history,
+    get_history,
+    get_history_stats,
+    init_db,
+    insert_scan,
+)
 from backend.features import (
     FEATURE_NAMES,
     canonical_url_string,
@@ -37,24 +47,15 @@ from backend.features import (
     normalize_url,
 )
 from backend.predictor import (
-    predict_url,
-    load_model,
-    validate_url,
-    _map_risk_level,
     _extract_top_contributions,
-    model_is_available,
+    _map_risk_level,
     get_metadata,
     get_saved_metrics,
+    load_model,
+    model_is_available,
+    predict_url,
+    validate_url,
 )
-from backend.database import (
-    _get_conn,
-    init_db,
-    get_history_stats,
-    insert_scan,
-    get_history,
-    clear_history,
-)
-from backend.app import app
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -147,10 +148,12 @@ class TestUrlNormalisationParity:
         norm_bare = normalize_url(url_bare)
         norm_https = normalize_url(url_https)
         norm_www = normalize_url(url_www)
+        norm_http_www = normalize_url(url_http_www)
 
         assert norm_bare == "https://github.com/security"
         assert norm_https == "https://github.com/security"
         assert norm_www == "https://github.com/security"
+        assert norm_http_www == "http://github.com/security"
 
         # Check scheme_missing flag
         _, missing_bare = normalise_url(url_bare)
@@ -404,6 +407,7 @@ class TestApiSecurityAndPolicies:
 
     def test_rate_limiting_enforcement(self):
         from backend.app import limiter
+
         limiter.reset()
         client = app.test_client()
         rate_limited = False
@@ -458,6 +462,7 @@ class TestZeroNetworkRequestsGuarantee:
         Monkeypatch socket and HTTP libraries to raise immediately.
         Prediction must succeed purely through static lexical and structural analysis.
         """
+
         def forbidden_call(*args, **kwargs):
             raise AssertionError("CRITICAL SECURITY VIOLATION: Network call was attempted on a submitted URL!")
 
@@ -471,6 +476,7 @@ class TestZeroNetworkRequestsGuarantee:
         # Block requests if imported
         if "requests" in sys.modules:
             import requests
+
             monkeypatch.setattr(requests, "get", forbidden_call)
             monkeypatch.setattr(requests, "post", forbidden_call)
             monkeypatch.setattr(requests.sessions.Session, "request", forbidden_call)

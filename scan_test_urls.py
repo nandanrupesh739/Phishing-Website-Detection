@@ -4,8 +4,9 @@ Scan 8+ URLs through the running PhishGuard AI API
 Sends test URLs to http://127.0.0.1:5000/api/predict via HTTP POST.
 Does NOT visit or fetch URLs, only evaluates text structure.
 """
-import urllib.request
+
 import json
+import urllib.request
 
 test_urls = [
     # 4 Well-known legitimate URLs
@@ -18,10 +19,14 @@ test_urls = [
     ("https://www.github.com", "Legitimate (with www)"),
     # 4 Obviously phishing-style made-up URLs
     ("http://192.168.1.100/secure/login.php", "Phishing (IP host + login)"),
-    ("http://paypal-account-verification.security-update-2026.com/login/verify.php?session=9382103", "Phishing (long + login/verify)"),
+    (
+        "http://paypal-account-verification.security-update-2026.com/login/verify.php?session=9382103",
+        "Phishing (long + login/verify)",
+    ),
     ("http://user:password@malicious-bank-login.xyz/account/confirm", "Phishing (@ trick + confirm)"),
     ("http://apple-id-suspended.support-center.top/recovery/auth.html", "Phishing (odd TLD .top + suspended)"),
 ]
+
 
 def main():
     print("=" * 115)
@@ -46,6 +51,7 @@ def main():
             print(f"{i:<3} | {category:<32} | {url[:48]:<50} | ERROR: {e}")
 
     print("=" * 115)
+
 
 if __name__ == "__main__":
     main()

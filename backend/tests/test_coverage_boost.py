@@ -4,6 +4,7 @@ PhishGuard AI — Targeted Coverage Tests for Backend Edge Cases
 Ensures >= 85% line coverage across all files in backend/ (app.py, predictor.py,
 features.py, database.py, config.py, and train_model.py).
 """
+
 from __future__ import annotations
 
 import json
@@ -15,12 +16,12 @@ import numpy as np
 import pytest
 from sklearn.linear_model import LogisticRegression
 
-import backend.config as config
-import backend.predictor as predictor
-import backend.database as database
 import backend.app as app_module
-from backend.app import app, limiter
+import backend.config as config
+import backend.database as database
+import backend.predictor as predictor
 import backend.train_model as train_model
+from backend.app import app, limiter
 
 
 @pytest.fixture(autouse=True)
@@ -62,6 +63,7 @@ class TestPredictorCoverageEdgeCases:
         pipe = LogisticRegression()
         pipe_path = tmp_path / "pipe_model.joblib"
         import joblib
+
         joblib.dump(pipe, pipe_path)
 
         monkeypatch.setattr(predictor, "MODELS_DIR", tmp_path)

@@ -9,8 +9,11 @@ and saves it to data/phishing_dataset.csv with original labels:
 Usage:
     python download_data.py
 """
+
 import os
+
 from ucimlrepo import fetch_ucirepo
+
 
 def download_phiusiil_dataset():
     os.makedirs("data", exist_ok=True)
@@ -26,6 +29,7 @@ def download_phiusiil_dataset():
     print(f"[OK] Download complete. Dataset shape: {df.shape}")
     print("[*] Label distribution (Original UCI convention: 1=Legitimate, 0=Phishing):")
     print(df["label"].value_counts().to_string())
+
 
 if __name__ == "__main__":
     download_phiusiil_dataset()

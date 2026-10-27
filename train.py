@@ -37,34 +37,35 @@ from pathlib import Path
 
 import joblib
 import matplotlib
+
 matplotlib.use("Agg")  # Headless backend
+import lightgbm as lgb
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.sparse
+import tldextract
 from sklearn.calibration import CalibratedClassifierCV, calibration_curve
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.naive_bayes import MultinomialNB
 from sklearn.metrics import (
+    ConfusionMatrixDisplay,
     accuracy_score,
+    auc,
     average_precision_score,
     brier_score_loss,
     confusion_matrix,
-    ConfusionMatrixDisplay,
     f1_score,
     precision_score,
     recall_score,
     roc_auc_score,
     roc_curve,
-    auc,
 )
-from sklearn.model_selection import GroupShuffleSplit, GroupKFold, StratifiedGroupKFold, RandomizedSearchCV
+from sklearn.model_selection import GroupKFold, GroupShuffleSplit, RandomizedSearchCV, StratifiedGroupKFold
+from sklearn.naive_bayes import MultinomialNB
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
-import lightgbm as lgb
-import tldextract
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -81,14 +82,14 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from backend.config import (
     DATA_PATH,
-    MODELS_DIR,
-    REPORTS_DIR,
-    RANDOM_SEED,
     MODEL_VERSION,
+    MODELS_DIR,
+    RANDOM_SEED,
+    REPORTS_DIR,
+    TARGET_PHISHING_RECALL,
+    TEST_SIZE,
     TRAIN_SIZE,
     VAL_SIZE,
-    TEST_SIZE,
-    TARGET_PHISHING_RECALL,
 )
 from backend.features import (
     FEATURE_NAMES,
@@ -144,8 +145,7 @@ def inspect_and_clean_data(csv_path: Path) -> tuple[pd.DataFrame, dict]:
     t0 = time.time()
     df_raw = pd.read_csv(csv_path, low_memory=False)
     raw_sha = compute_sha256(csv_path)
-    log.info("Loaded in %.2fs. Raw Shape: %s | SHA-256: %s",
-             time.time() - t0, df_raw.shape, raw_sha)
+    log.info("Loaded in %.2fs. Raw Shape: %s | SHA-256: %s", time.time() - t0, df_raw.shape, raw_sha)
 
     # Identify URL and Label columns
     url_col = next((c for c in ["url", "URL", "Url", "urlString"] if c in df_raw.columns), None)
@@ -176,8 +176,7 @@ def inspect_and_clean_data(csv_path: Path) -> tuple[pd.DataFrame, dict]:
     df.drop_duplicates(subset=["url"], keep="first", inplace=True)
     df.reset_index(drop=True, inplace=True)
     removed_dups = initial_len - len(df)
-    log.info("Deduplication: removed %d duplicate rows. Dataset size: %d URLs",
-             removed_dups, len(df))
+    log.info("Deduplication: removed %d duplicate rows. Dataset size: %d URLs", removed_dups, len(df))
 
     # Canonicalise URLs identically for training and inference using normalize_url()
     log.info("Canonicalising URLs via normalize_url()…")
@@ -253,24 +252,37 @@ def split_domain_grouped(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, 
 
     log.info("Split Sizes:")
     log.info("  Train set (70%%): %d samples (%d unique domains)", len(df_train), len(dom_train))
-    log.info("    SAFE: %d (%.1f%%) | PHISHING: %d (%.1f%%)",
-             (df_train["label"] == 0).sum(), (df_train["label"] == 0).mean() * 100,
-             (df_train["label"] == 1).sum(), (df_train["label"] == 1).mean() * 100)
+    log.info(
+        "    SAFE: %d (%.1f%%) | PHISHING: %d (%.1f%%)",
+        (df_train["label"] == 0).sum(),
+        (df_train["label"] == 0).mean() * 100,
+        (df_train["label"] == 1).sum(),
+        (df_train["label"] == 1).mean() * 100,
+    )
     log.info("  Validation set (15%%): %d samples (%d unique domains)", len(df_val), len(dom_val))
-    log.info("    SAFE: %d (%.1f%%) | PHISHING: %d (%.1f%%)",
-             (df_val["label"] == 0).sum(), (df_val["label"] == 0).mean() * 100,
-             (df_val["label"] == 1).sum(), (df_val["label"] == 1).mean() * 100)
+    log.info(
+        "    SAFE: %d (%.1f%%) | PHISHING: %d (%.1f%%)",
+        (df_val["label"] == 0).sum(),
+        (df_val["label"] == 0).mean() * 100,
+        (df_val["label"] == 1).sum(),
+        (df_val["label"] == 1).mean() * 100,
+    )
     log.info("  Held-out Test set (15%%): %d samples (%d unique domains)", len(df_test), len(dom_test))
-    log.info("    SAFE: %d (%.1f%%) | PHISHING: %d (%.1f%%)",
-             (df_test["label"] == 0).sum(), (df_test["label"] == 0).mean() * 100,
-             (df_test["label"] == 1).sum(), (df_test["label"] == 1).mean() * 100)
+    log.info(
+        "    SAFE: %d (%.1f%%) | PHISHING: %d (%.1f%%)",
+        (df_test["label"] == 0).sum(),
+        (df_test["label"] == 0).mean() * 100,
+        (df_test["label"] == 1).sum(),
+        (df_test["label"] == 1).mean() * 100,
+    )
 
     log.info("Domain Leakage Verification:")
     log.info("  Train & Val domain overlap:  %d", overlap_train_val)
     log.info("  Train & Test domain overlap: %d", overlap_train_test)
     log.info("  Val & Test domain overlap:   %d", overlap_val_test)
-    assert overlap_train_val == 0 and overlap_train_test == 0 and overlap_val_test == 0, \
+    assert overlap_train_val == 0 and overlap_train_test == 0 and overlap_val_test == 0, (
         "Domain leakage detected across splits!"
+    )
 
     return df_train, df_val, df_test
 
@@ -323,8 +335,12 @@ def train_and_evaluate(
     log.info("TLD frequency map fitted on %d unique suffixes from training set.", len(tld_freq_map))
 
     # 2. Extract Tabular Features (42 features)
-    log.info("Extracting tabular features for Train (%d), Val (%d), Test (%d)…",
-             len(urls_train), len(urls_val), len(urls_test))
+    log.info(
+        "Extracting tabular features for Train (%d), Val (%d), Test (%d)…",
+        len(urls_train),
+        len(urls_val),
+        len(urls_test),
+    )
     X_tab_train = extract_tabular_matrix(urls_train, tld_freq_map=tld_freq_map)
     X_tab_val = extract_tabular_matrix(urls_val, tld_freq_map=tld_freq_map)
     X_tab_test = extract_tabular_matrix(urls_test, tld_freq_map=tld_freq_map)
@@ -452,9 +468,14 @@ def train_and_evaluate(
             "roc_auc_mean": round(float(np.mean(roc_auc_scores)), 4),
             "roc_auc_std": round(float(np.std(roc_auc_scores)), 4),
         }
-        log.info("  -> %s CV: F1 = %.4f (+/- %.4f) | Acc = %.4f | AUC = %.4f",
-                 name, cv_results[name]["f1_mean"], cv_results[name]["f1_std"],
-                 cv_results[name]["accuracy_mean"], cv_results[name]["roc_auc_mean"])
+        log.info(
+            "  -> %s CV: F1 = %.4f (+/- %.4f) | Acc = %.4f | AUC = %.4f",
+            name,
+            cv_results[name]["f1_mean"],
+            cv_results[name]["f1_std"],
+            cv_results[name]["accuracy_mean"],
+            cv_results[name]["roc_auc_mean"],
+        )
 
     # 7. Step 5: Hyperparameter Tuning via RandomizedSearchCV on TRAIN Split Only (Phase 3.2)
     log.info("\n" + "=" * 70)
@@ -530,8 +551,16 @@ def train_and_evaluate(
             "cv_f1_mean": cv_results[name]["f1_mean"],
             "cv_f1_std": cv_results[name]["f1_std"],
         }
-        log.info("  [VAL] %s -> Acc: %.4f | Prec: %.4f | Rec: %.4f | F1: %.4f | AUC: %.4f | Brier: %.4f",
-                 name, acc, prec, rec, f1, auc_score, brier)
+        log.info(
+            "  [VAL] %s -> Acc: %.4f | Prec: %.4f | Rec: %.4f | F1: %.4f | AUC: %.4f | Brier: %.4f",
+            name,
+            acc,
+            prec,
+            rec,
+            f1,
+            auc_score,
+            brier,
+        )
 
     # Print Validation Comparison Table
     print("\n" + "-" * 85)
@@ -540,15 +569,21 @@ def train_and_evaluate(
     print(f"{'Model':<38} | {'Accuracy':<9} | {'Precision':<9} | {'Recall':<9} | {'F1-Score':<9} | {'ROC-AUC':<8}")
     print("-" * 85)
     for name, r in val_comparison.items():
-        print(f"{name:<38} | {r['accuracy']:<9.4f} | {r['precision']:<9.4f} | {r['recall']:<9.4f} | {r['f1']:<9.4f} | {r['roc_auc']:<8.4f}")
+        print(
+            f"{name:<38} | {r['accuracy']:<9.4f} | {r['precision']:<9.4f} | {r['recall']:<9.4f} | {r['f1']:<9.4f} | {r['roc_auc']:<8.4f}"
+        )
     print("-" * 85 + "\n")
 
     # Select winner on VALIDATION set only!
     winner_name = max(val_comparison, key=lambda k: (val_comparison[k]["f1"], val_comparison[k]["recall"]))
     raw_winner_model = models_fitted[winner_name]
     winner_spec = candidate_specs[winner_name]
-    log.info("[*] WINNER SELECTED ON VALIDATION SET: '%s' (Val F1: %.4f, Val AUC: %.4f)",
-             winner_name, val_comparison[winner_name]["f1"], val_comparison[winner_name]["roc_auc"])
+    log.info(
+        "[*] WINNER SELECTED ON VALIDATION SET: '%s' (Val F1: %.4f, Val AUC: %.4f)",
+        winner_name,
+        val_comparison[winner_name]["f1"],
+        val_comparison[winner_name]["roc_auc"],
+    )
 
     # 9. Step 7: Probability Calibration & Decision Threshold Tuning (Phase 3.3)
     log.info("\n" + "=" * 70)
@@ -589,8 +624,11 @@ def train_and_evaluate(
             highest_recall = rec
 
     if best_fpr_at_target == 1.0:
-        log.warning("Target recall %.2f not fully met on validation set. Max achievable: %.4f. Maximizing F1.",
-                    TARGET_PHISHING_RECALL, highest_recall)
+        log.warning(
+            "Target recall %.2f not fully met on validation set. Max achievable: %.4f. Maximizing F1.",
+            TARGET_PHISHING_RECALL,
+            highest_recall,
+        )
         best_f1 = 0.0
         for t in thresholds:
             preds = (val_probs >= t).astype(int)
@@ -619,13 +657,16 @@ def train_and_evaluate(
         "brier_score": round(val_brier, 4),
         "false_positive_rate": round(best_fpr_at_target, 4),
         "decision_threshold": round(best_threshold, 4),
-        "confusion_matrix": [[int(val_cm[0, 0]), int(val_cm[0, 1])],
-                             [int(val_cm[1, 0]), int(val_cm[1, 1])]],
+        "confusion_matrix": [[int(val_cm[0, 0]), int(val_cm[0, 1])], [int(val_cm[1, 0]), int(val_cm[1, 1])]],
     }
 
     log.info("Tuned Decision Threshold on Validation Set: %.4f", best_threshold)
-    log.info("  Validation Phishing Recall: %.4f | Validation Phishing Precision: %.4f | Validation FPR: %.4f",
-             val_final_rec, val_final_prec, best_fpr_at_target)
+    log.info(
+        "  Validation Phishing Recall: %.4f | Validation Phishing Precision: %.4f | Validation FPR: %.4f",
+        val_final_rec,
+        val_final_prec,
+        best_fpr_at_target,
+    )
 
     # 10. Step 8: Final Single Evaluation on Held-Out Test Set (Touched ONCE)
     log.info("\n" + "=" * 70)
@@ -710,17 +751,21 @@ def train_and_evaluate(
     if hasattr(raw_winner_model, "feature_importances_"):
         imps = raw_winner_model.feature_importances_
         for i, feat_name in enumerate(FEATURE_NAMES):
-            feature_importances.append({
-                "feature": feat_name,
-                "importance": float(imps[i]) if i < len(imps) else 0.0,
-            })
+            feature_importances.append(
+                {
+                    "feature": feat_name,
+                    "importance": float(imps[i]) if i < len(imps) else 0.0,
+                }
+            )
     elif hasattr(raw_winner_model, "coef_"):
         coefs = np.abs(raw_winner_model.coef_[0])
         for i, feat_name in enumerate(FEATURE_NAMES):
-            feature_importances.append({
-                "feature": feat_name,
-                "importance": float(coefs[i]) if i < len(coefs) else 0.0,
-            })
+            feature_importances.append(
+                {
+                    "feature": feat_name,
+                    "importance": float(coefs[i]) if i < len(coefs) else 0.0,
+                }
+            )
     feature_importances.sort(key=lambda x: x["importance"], reverse=True)
 
     print("\nTop 10 Feature Importances:")
@@ -729,8 +774,11 @@ def train_and_evaluate(
         rel_share = fi["importance"] / total_imp
         print(f"  {rank:02d}. {fi['feature']:<28} : {fi['importance']:.4f} ({rel_share:.1%})")
         if rel_share > 0.40:
-            log.warning("[!] ARTIFACT WARNING: Feature '%s' accounts for %.1f%% of importance (> 40%%)!",
-                        fi["feature"], rel_share * 100)
+            log.warning(
+                "[!] ARTIFACT WARNING: Feature '%s' accounts for %.1f%% of importance (> 40%%)!",
+                fi["feature"],
+                rel_share * 100,
+            )
 
     # Parity and Normalisation Invariance Check across 20 Known Legitimate URLs (Phase 3.7)
     log.info("\n" + "=" * 90)
@@ -759,7 +807,9 @@ def train_and_evaluate(
         "apache.org",
     ]
 
-    print(f"\n{'Domain':<20} | {'Bare Domain':<14} | {'With https://':<14} | {'With www.':<14} | {'With https+www':<14} | {'Invariant?'}")
+    print(
+        f"\n{'Domain':<20} | {'Bare Domain':<14} | {'With https://':<14} | {'With www.':<14} | {'With https+www':<14} | {'Invariant?'}"
+    )
     print("-" * 95)
     all_invariant = True
     for dom in known_legit_domains:
@@ -859,8 +909,11 @@ def generate_reports(
     fig, ax = plt.subplots(figsize=(6, 5))
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["SAFE", "PHISHING"])
     disp.plot(ax=ax, cmap="Blues", values_format="d")
-    ax.set_title(f"Confusion Matrix — {winner_name}\n(Held-out Test Set, N={len(y_test):,}, Thresh={test_metrics['decision_threshold']:.2f})",
-                 fontsize=11, fontweight="bold")
+    ax.set_title(
+        f"Confusion Matrix — {winner_name}\n(Held-out Test Set, N={len(y_test):,}, Thresh={test_metrics['decision_threshold']:.2f})",
+        fontsize=11,
+        fontweight="bold",
+    )
     plt.tight_layout()
     cm_path = reports_dir / "confusion_matrix.png"
     plt.savefig(cm_path, dpi=150)
@@ -895,8 +948,7 @@ def generate_reports(
     ax.set_ylim([0.0, 1.0])
     ax.set_xlabel("Mean Predicted Probability", fontsize=11)
     ax.set_ylabel("Fraction of Positives", fontsize=11)
-    ax.set_title(f"Reliability Curve (Brier Score = {test_metrics['brier_score']:.4f})",
-                 fontsize=12, fontweight="bold")
+    ax.set_title(f"Reliability Curve (Brier Score = {test_metrics['brier_score']:.4f})", fontsize=12, fontweight="bold")
     ax.legend(loc="upper left", frameon=True)
     ax.grid(alpha=0.3)
     plt.tight_layout()
@@ -932,7 +984,7 @@ def generate_reports(
         f.write("=" * 65 + "\n\n")
         f.write(f"Trained at            : {datetime.now(timezone.utc).isoformat()}\n")
         f.write(f"Winner Model          : {winner_name}\n")
-        f.write(f"Split Method          : 70/15/15 Domain-Grouped (tldextract PSL)\n")
+        f.write("Split Method          : 70/15/15 Domain-Grouped (tldextract PSL)\n")
         f.write(f"Tuned Threshold       : {test_metrics['decision_threshold']}\n")
         f.write(f"Test Set Size         : {len(y_test):,} samples\n\n")
         f.write("Held-Out Test Set Metrics\n")

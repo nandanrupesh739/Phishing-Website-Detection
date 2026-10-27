@@ -3,6 +3,7 @@ Test saved model on 10 benchmark URLs:
   - 5 known legitimate
   - 5 obviously suspicious made-up ones
 """
+
 import sys
 from pathlib import Path
 

@@ -66,7 +66,8 @@ log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = config.SECRET_KEY
-app.json.sort_keys = False
+if hasattr(app.json, "sort_keys"):
+    setattr(app.json, "sort_keys", False)
 
 # Rate limiting
 limiter = Limiter(
@@ -118,6 +119,7 @@ with app.app_context():
 # Helpers & Error Handlers
 # ──────────────────────────────────────────────────────────────────────────
 
+
 def _error(message: str, code: int) -> tuple:
     return jsonify({"error": message}), code
 
@@ -128,33 +130,35 @@ def _ok(data: dict) -> tuple:
 
 @app.errorhandler(429)
 def ratelimit_handler(e):
-    return jsonify({
-        "error": "Rate limit exceeded (maximum 60 requests per minute). Please slow down."
-    }), 429
+    return jsonify({"error": "Rate limit exceeded (maximum 60 requests per minute). Please slow down."}), 429
 
 
 # ──────────────────────────────────────────────────────────────────────────
 # GET /api/health
 # ──────────────────────────────────────────────────────────────────────────
 
+
 @app.route("/api/health", methods=["GET"])
 def health():
     """Return service status and model availability."""
     model_ready = model_is_available()
     meta = get_metadata() if model_ready else {}
-    return jsonify({
-        "status": "ok",
-        "model_available": model_ready,
-        "model_name": meta.get("model_name"),
-        "model_version": meta.get("model_version"),
-        "feature_count": meta.get("feature_count"),
-        "decision_threshold": meta.get("decision_threshold"),
-    }), 200
+    return jsonify(
+        {
+            "status": "ok",
+            "model_available": model_ready,
+            "model_name": meta.get("model_name"),
+            "model_version": meta.get("model_version"),
+            "feature_count": meta.get("feature_count"),
+            "decision_threshold": meta.get("decision_threshold"),
+        }
+    ), 200
 
 
 # ──────────────────────────────────────────────────────────────────────────
 # POST /api/predict
 # ──────────────────────────────────────────────────────────────────────────
+
 
 @app.route("/api/predict", methods=["POST"])
 @limiter.limit(config.RATE_LIMIT_PREDICT)
@@ -177,9 +181,7 @@ def predict():
 
     url = url.strip()
     if len(url) > config.MAX_URL_LENGTH:
-        return _error(
-            f"URL exceeds maximum allowed length ({config.MAX_URL_LENGTH} characters).", 400
-        )
+        return _error(f"URL exceeds maximum allowed length ({config.MAX_URL_LENGTH} characters).", 400)
     if len(url) == 0:
         return _error("URL must not be empty.", 400)
 
@@ -189,9 +191,7 @@ def predict():
     try:
         result = predict_url(url)
     except ModelNotFoundError:
-        return _error(
-            "The prediction model is not available. Please train the model first.", 503
-        )
+        return _error("The prediction model is not available. Please train the model first.", 503)
     except PredictionError:
         return _error("An internal error occurred during prediction.", 500)
     except Exception:
@@ -224,6 +224,7 @@ def predict():
 # POST /api/predict-batch
 # ──────────────────────────────────────────────────────────────────────────
 
+
 @app.route("/api/predict-batch", methods=["POST"])
 @limiter.limit(config.RATE_LIMIT_PREDICT)
 def predict_batch():
@@ -243,16 +244,12 @@ def predict_batch():
         return _error("'urls' field must be a non-empty list of URL strings.", 400)
 
     if len(urls) > config.MAX_BATCH_SIZE:
-        return _error(
-            f"Batch size exceeds maximum of {config.MAX_BATCH_SIZE} URLs.", 400
-        )
+        return _error(f"Batch size exceeds maximum of {config.MAX_BATCH_SIZE} URLs.", 400)
 
     anonymize = data.get("anonymize", None)
 
     if not model_is_available():
-        return _error(
-            "The prediction model is not available. Please train the model first.", 503
-        )
+        return _error("The prediction model is not available. Please train the model first.", 503)
 
     meta = get_metadata()
     results = []
@@ -262,21 +259,25 @@ def predict_batch():
 
     for raw_u in urls:
         if not isinstance(raw_u, str) or not raw_u.strip():
-            results.append({
-                "url": raw_u,
-                "error": "URL must be a non-empty string.",
-                "prediction": None,
-            })
+            results.append(
+                {
+                    "url": raw_u,
+                    "error": "URL must be a non-empty string.",
+                    "prediction": None,
+                }
+            )
             error_count += 1
             continue
 
         clean_u = raw_u.strip()
         if len(clean_u) > config.MAX_URL_LENGTH:
-            results.append({
-                "url": clean_u,
-                "error": f"URL exceeds maximum allowed length ({config.MAX_URL_LENGTH} characters).",
-                "prediction": None,
-            })
+            results.append(
+                {
+                    "url": clean_u,
+                    "error": f"URL exceeds maximum allowed length ({config.MAX_URL_LENGTH} characters).",
+                    "prediction": None,
+                }
+            )
             error_count += 1
             continue
 
@@ -306,21 +307,24 @@ def predict_batch():
                 log.warning("Failed to save batch item to history (non-fatal).")
 
     threshold = meta.get("decision_threshold", 0.50)
-    return jsonify({
-        "results": results,
-        "total": len(results),
-        "threshold": threshold,
-        "summary": {
-            "safe_count": safe_count,
-            "phishing_count": phish_count,
-            "error_count": error_count,
-        },
-    }), 200
+    return jsonify(
+        {
+            "results": results,
+            "total": len(results),
+            "threshold": threshold,
+            "summary": {
+                "safe_count": safe_count,
+                "phishing_count": phish_count,
+                "error_count": error_count,
+            },
+        }
+    ), 200
 
 
 # ──────────────────────────────────────────────────────────────────────────
 # GET /api/history
 # ──────────────────────────────────────────────────────────────────────────
+
 
 @app.route("/api/history", methods=["GET"])
 def history():
@@ -338,18 +342,21 @@ def history():
     total = get_total_count()
     stats = get_history_stats()
 
-    return jsonify({
-        "records": records,
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "stats": stats,
-    }), 200
+    return jsonify(
+        {
+            "records": records,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "stats": stats,
+        }
+    ), 200
 
 
 # ──────────────────────────────────────────────────────────────────────────
 # DELETE /api/history
 # ──────────────────────────────────────────────────────────────────────────
+
 
 @app.route("/api/history", methods=["DELETE"])
 def delete_history():
@@ -364,16 +371,16 @@ def delete_history():
             if auth.startswith("Bearer "):
                 provided_key = auth[7:].strip()
         if provided_key != config.HISTORY_API_KEY:
-            return _error(
-                "Unauthorized: Invalid or missing API key for history deletion.", 401
-            )
+            return _error("Unauthorized: Invalid or missing API key for history deletion.", 401)
 
     try:
         deleted = clear_history()
-        return jsonify({
-            "message": f"Scan history cleared. {deleted} record(s) deleted.",
-            "deleted_count": deleted,
-        }), 200
+        return jsonify(
+            {
+                "message": f"Scan history cleared. {deleted} record(s) deleted.",
+                "deleted_count": deleted,
+            }
+        ), 200
     except Exception:
         log.exception("Failed to clear scan history.")
         return _error("Failed to clear scan history.", 500)
@@ -383,13 +390,12 @@ def delete_history():
 # GET /api/model-metrics
 # ──────────────────────────────────────────────────────────────────────────
 
+
 @app.route("/api/model-metrics", methods=["GET"])
 def model_metrics():
     """Return saved evaluation metrics from the most recent training run."""
     if not model_is_available():
-        return _error(
-            "No trained model found. Run 'python train.py' first.", 503
-        )
+        return _error("No trained model found. Run 'python train.py' first.", 503)
     try:
         metrics = get_saved_metrics()
         return jsonify(metrics), 200
@@ -402,22 +408,33 @@ def model_metrics():
 # GET /api/model-info
 # ──────────────────────────────────────────────────────────────────────────
 
+
 @app.route("/api/model-info", methods=["GET"])
 def model_info():
     """Return model metadata: type, version, dataset source, feature count, timestamp."""
     if not model_is_available():
-        return jsonify({
-            "model_available": False,
-            "message": "No trained model found. Run the training pipeline first.",
-        }), 200
+        return jsonify(
+            {
+                "model_available": False,
+                "message": "No trained model found. Run the training pipeline first.",
+            }
+        ), 200
 
     meta = get_metadata()
     safe_fields = [
-        "model_name", "model_version", "feature_count",
-        "feature_names", "dataset_source", "dataset_size",
-        "label_distribution", "trained_at", "class_mapping",
-        "decision_threshold", "target_phishing_recall",
-        "split_description", "library_versions",
+        "model_name",
+        "model_version",
+        "feature_count",
+        "feature_names",
+        "dataset_source",
+        "dataset_size",
+        "label_distribution",
+        "trained_at",
+        "class_mapping",
+        "decision_threshold",
+        "target_phishing_recall",
+        "split_description",
+        "library_versions",
     ]
     return jsonify({k: meta[k] for k in safe_fields if k in meta}), 200
 
@@ -426,15 +443,18 @@ def model_info():
 # GET /api/external-eval
 # ──────────────────────────────────────────────────────────────────────────
 
+
 @app.route("/api/external-eval", methods=["GET"])
 def external_eval():
     """Return saved external benchmark evaluation metrics if available."""
     eval_file = config.REPORTS_DIR / "external_eval.json"
     if not eval_file.exists():
-        return jsonify({
-            "available": False,
-            "message": "External benchmark evaluation not yet run. Run 'python scripts/external_eval.py'.",
-        }), 200
+        return jsonify(
+            {
+                "available": False,
+                "message": "External benchmark evaluation not yet run. Run 'python scripts/external_eval.py'.",
+            }
+        ), 200
     try:
         with open(eval_file, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -449,13 +469,20 @@ def external_eval():
 # GET /api/reports/<filename>
 # ──────────────────────────────────────────────────────────────────────────
 
+
 @app.route("/api/reports/<path:filename>", methods=["GET"])
 def get_report_file(filename: str):
     """Serve static report figures (PNG/JSON)."""
     safe_names = {
-        "roc_curve.png", "calibration_curve.png", "precision_recall_curve.png",
-        "confusion_matrix.png", "feature_importance.png", "model_comparison.png",
-        "reliability_curve.png", "external_eval.json", "error_analysis.json",
+        "roc_curve.png",
+        "calibration_curve.png",
+        "precision_recall_curve.png",
+        "confusion_matrix.png",
+        "feature_importance.png",
+        "model_comparison.png",
+        "reliability_curve.png",
+        "external_eval.json",
+        "error_analysis.json",
     }
     if filename not in safe_names:
         return _error("Report file not found or unauthorized.", 404)

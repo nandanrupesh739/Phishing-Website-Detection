@@ -54,6 +54,7 @@ DISCLAIMER = (
 # Model loading
 # ──────────────────────────────────────────────────────────────────────────
 
+
 class ModelNotFoundError(FileNotFoundError):
     pass
 
@@ -76,8 +77,7 @@ def load_model(force_reload: bool = False) -> Any:
     target_path = MODEL_PKL_PATH if MODEL_PKL_PATH.exists() else MODEL_PATH
     if not target_path.exists():
         raise ModelNotFoundError(
-            f"Model file not found at '{MODEL_PKL_PATH}' or '{MODEL_PATH}'. "
-            "Please run 'python train.py' first."
+            f"Model file not found at '{MODEL_PKL_PATH}' or '{MODEL_PATH}'. Please run 'python train.py' first."
         )
 
     # Ensure target_path is restricted exclusively to project models directory
@@ -114,7 +114,8 @@ def load_model(force_reload: bool = False) -> Any:
                 "Feature name mismatch between model metadata and current "
                 "features.py. Re-training is recommended. "
                 "Saved: %s | Current: %s",
-                saved_features, FEATURE_NAMES,
+                saved_features,
+                FEATURE_NAMES,
             )
 
     if METRICS_PATH.exists():
@@ -156,8 +157,8 @@ def model_is_available() -> bool:
 # Input validation
 # ──────────────────────────────────────────────────────────────────────────
 
-import urllib.parse as _urlparse
 import re as _re
+import urllib.parse as _urlparse
 
 _ALLOWED_SCHEMES = {"http", "https", "ftp", "ftps"}
 _MAX_URL_LEN = 2048
@@ -224,6 +225,7 @@ def validate_url(url: str) -> tuple[bool, str]:
 # Risk scoring
 # ──────────────────────────────────────────────────────────────────────────
 
+
 def _map_risk_level(score: float, prediction_label: int | str) -> str:
     """
     Derive a qualitative risk level from model probability and prediction.
@@ -284,7 +286,11 @@ def _extract_top_contributions(model, scaler, vectorizer, X_input, top_k: int = 
 
         mean_contrib = np.mean(contrib_list, axis=0)
         # Tree SHAP appends expected value (bias) at the end; linear models don't
-        expected_len = len(FEATURE_NAMES) + (len(vectorizer.get_feature_names_out()) if vectorizer is not None and hasattr(vectorizer, "get_feature_names_out") else 0)
+        expected_len = len(FEATURE_NAMES) + (
+            len(vectorizer.get_feature_names_out())
+            if vectorizer is not None and hasattr(vectorizer, "get_feature_names_out")
+            else 0
+        )
         if len(mean_contrib) > expected_len:
             mean_contrib = mean_contrib[:-1]
 
@@ -303,11 +309,13 @@ def _extract_top_contributions(model, scaler, vectorizer, X_input, top_k: int = 
             val = float(mean_contrib[idx])
             if abs(val) < 0.001:
                 continue
-            results.append({
-                "feature": fnames[idx],
-                "contribution": round(val, 4),
-                "direction": "PHISHING" if val > 0 else "SAFE",
-            })
+            results.append(
+                {
+                    "feature": fnames[idx],
+                    "contribution": round(val, 4),
+                    "direction": "PHISHING" if val > 0 else "SAFE",
+                }
+            )
         return results
     except Exception as exc:
         log.warning("Feature contribution calculation failed: %s", exc)
@@ -317,6 +325,7 @@ def _extract_top_contributions(model, scaler, vectorizer, X_input, top_k: int = 
 # ──────────────────────────────────────────────────────────────────────────
 # Public API
 # ──────────────────────────────────────────────────────────────────────────
+
 
 def predict_url(url: str) -> dict:
     """
@@ -353,6 +362,7 @@ def predict_url(url: str) -> dict:
 
     if _scaler is not None and _vectorizer is not None:
         import scipy.sparse
+
         X_tab = _scaler.transform(raw_vec)
         X_tfidf = _vectorizer.transform([norm_url])
         X_input = scipy.sparse.hstack([X_tab, X_tfidf])
@@ -379,6 +389,9 @@ def predict_url(url: str) -> dict:
     score: float | None = None
     confidence_pct: float | None = None
     score_type: str = "unavailable"
+
+    if _model is None:
+        raise PredictionError("Model is not loaded.")
 
     # Probabilistic prediction using threshold
     try:
@@ -419,9 +432,17 @@ def predict_url(url: str) -> dict:
 
     # ── 7. Return structured result ──────────────────────────────────────
     confidence_str = f"{confidence_pct:.1f}%" if confidence_pct is not None else "N/A"
-    phish_prob = round(prob_phish, 4) if "prob_phish" in locals() and prob_phish is not None else (round(score, 4) if score is not None else None)
-    m_ver = _metadata.get("model_version") if _metadata else (_bundle.get("model_version", "1.0.0") if _bundle else "1.0.0")
-    m_name = _metadata.get("model_name") if _metadata else (_bundle.get("model_name", "LightGBM") if _bundle else "LightGBM")
+    phish_prob = (
+        round(prob_phish, 4)
+        if "prob_phish" in locals() and prob_phish is not None
+        else (round(score, 4) if score is not None else None)
+    )
+    m_ver = (
+        _metadata.get("model_version") if _metadata else (_bundle.get("model_version", "1.0.0") if _bundle else "1.0.0")
+    )
+    m_name = (
+        _metadata.get("model_name") if _metadata else (_bundle.get("model_name", "LightGBM") if _bundle else "LightGBM")
+    )
 
     return {
         "url": url,

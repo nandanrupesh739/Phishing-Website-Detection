@@ -3,6 +3,7 @@ PhishGuard AI — System E2E Test Wrapper
 =======================================
 Delegates to canonical live HTTP smoke test in scripts/e2e_smoke.py.
 """
+
 from __future__ import annotations
 
 import sys

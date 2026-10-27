@@ -4,6 +4,7 @@ Tests for backend/app.py — Flask REST API
 Uses Flask test client. Model is mocked so tests run without a trained model file.
 Database is isolated using an in-memory SQLite via monkeypatching.
 """
+
 import json
 import sys
 import tempfile
@@ -28,8 +29,8 @@ def mock_model():
 @pytest.fixture()
 def app(mock_model, tmp_path):
     """Create a Flask test app with mocked model and temp DB."""
-    import backend.predictor as pred_module
     import backend.config as cfg_module
+    import backend.predictor as pred_module
 
     # Patch DB path to a temp file
     test_db = tmp_path / "test_phishguard.db"
@@ -56,7 +57,9 @@ def app(mock_model, tmp_path):
 
     # Import app after patching to pick up new DB path
     import importlib
+
     import backend.app as app_module
+
     importlib.reload(app_module)
 
     app_module.app.config["TESTING"] = True
@@ -72,6 +75,7 @@ def app(mock_model, tmp_path):
 # ---------------------------------------------------------------------------
 # GET /api/health
 # ---------------------------------------------------------------------------
+
 
 class TestHealthEndpoint:
     def test_health_returns_200(self, app):
@@ -90,6 +94,7 @@ class TestHealthEndpoint:
 # ---------------------------------------------------------------------------
 # POST /api/predict
 # ---------------------------------------------------------------------------
+
 
 class TestPredictEndpoint:
     def test_valid_url_returns_200(self, app):
@@ -183,6 +188,7 @@ class TestPredictEndpoint:
 # GET /api/history
 # ---------------------------------------------------------------------------
 
+
 class TestHistoryEndpoint:
     def test_history_returns_200(self, app):
         resp = app.get("/api/history")
@@ -203,7 +209,8 @@ class TestHistoryEndpoint:
         assert resp.status_code == 400
 
     def test_history_stats_counts_safe_and_likely_legitimate(self, app):
-        from backend.database import insert_scan, clear_history
+        from backend.database import clear_history, insert_scan
+
         clear_history()
 
         insert_scan("http://safe1.com", "SAFE", "LOW", 0.1, "model_probability", "1.0.0")
@@ -223,6 +230,7 @@ class TestHistoryEndpoint:
 # DELETE /api/history
 # ---------------------------------------------------------------------------
 
+
 class TestDeleteHistoryEndpoint:
     def test_delete_returns_200(self, app):
         resp = app.delete("/api/history")
@@ -239,6 +247,7 @@ class TestDeleteHistoryEndpoint:
 # GET /api/model-metrics
 # ---------------------------------------------------------------------------
 
+
 class TestModelMetricsEndpoint:
     def test_metrics_returns_200(self, app):
         resp = app.get("/api/model-metrics")
@@ -252,6 +261,7 @@ class TestModelMetricsEndpoint:
 # ---------------------------------------------------------------------------
 # GET /api/model-info
 # ---------------------------------------------------------------------------
+
 
 class TestModelInfoEndpoint:
     def test_model_info_returns_200(self, app):
@@ -272,6 +282,7 @@ class TestModelInfoEndpoint:
 # ---------------------------------------------------------------------------
 # POST /api/predict-batch
 # ---------------------------------------------------------------------------
+
 
 class TestPredictBatchEndpoint:
     def test_predict_batch_success(self, app):
@@ -305,9 +316,11 @@ class TestPredictBatchEndpoint:
 # DELETE /api/history API Key Protection
 # ---------------------------------------------------------------------------
 
+
 class TestDeleteHistoryApiKey:
     def test_delete_history_rejected_when_api_key_configured_but_missing(self, app, monkeypatch):
         import backend.config as cfg
+
         monkeypatch.setattr(cfg, "HISTORY_API_KEY", "secret-admin-key")
 
         resp = app.delete("/api/history")
@@ -316,6 +329,7 @@ class TestDeleteHistoryApiKey:
 
     def test_delete_history_accepted_with_valid_api_key(self, app, monkeypatch):
         import backend.config as cfg
+
         monkeypatch.setattr(cfg, "HISTORY_API_KEY", "secret-admin-key")
 
         resp = app.delete("/api/history", headers={"x-api-key": "secret-admin-key"})
@@ -326,6 +340,7 @@ class TestDeleteHistoryApiKey:
 # ---------------------------------------------------------------------------
 # Anonymize Stored URLs Option
 # ---------------------------------------------------------------------------
+
 
 class TestAnonymizeUrls:
     def test_anonymize_url_storage(self, app, monkeypatch):
@@ -349,11 +364,13 @@ class TestAnonymizeUrls:
 # Production SECRET_KEY Enforcement
 # ---------------------------------------------------------------------------
 
+
 class TestSecretKeyProductionCheck:
     def test_enforce_production_secret_key_raises(self, monkeypatch):
+        from flask import Flask
+
         import backend.config as cfg
         from backend.app import enforce_production_secret_key
-        from flask import Flask
 
         monkeypatch.setattr(cfg, "FLASK_DEBUG", False)
         monkeypatch.setattr(cfg, "SECRET_KEY", "change-me-in-production")
@@ -366,10 +383,10 @@ class TestSecretKeyProductionCheck:
         assert "SECRET_KEY must be configured" in str(exc_info.value)
 
 
-
 # ---------------------------------------------------------------------------
 # Reports Endpoint
 # ---------------------------------------------------------------------------
+
 
 class TestReportsEndpoint:
     def test_unauthorized_report_file_returns_404(self, app):
@@ -385,6 +402,7 @@ class TestReportsEndpoint:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def resp_json(response) -> dict:
     return json.loads(response.data)

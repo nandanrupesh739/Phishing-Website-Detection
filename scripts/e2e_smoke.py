@@ -7,6 +7,7 @@ and detection results, then cleanly shuts down the server.
 
 Exits with code 0 on success, and non-zero on any failure.
 """
+
 from __future__ import annotations
 
 import json
@@ -16,8 +17,8 @@ import sys
 import tempfile
 import threading
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 # Add project root to sys.path
@@ -26,7 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import backend.config as config
-from backend.features import FEATURE_NAMES, normalize_url, extract_url_features, features_to_vector
+from backend.features import FEATURE_NAMES, extract_url_features, features_to_vector, normalize_url
 
 
 def get_free_port() -> int:
@@ -42,19 +43,24 @@ def ensure_model_available(tmp_dir: Path):
         print("[*] No pre-trained model on disk. Generating synthetic model for smoke test…")
         import joblib
         import numpy as np
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.preprocessing import StandardScaler
         import scipy.sparse
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.preprocessing import StandardScaler
 
         model_file = tmp_dir / "phishguard_model.joblib"
         metadata_file = tmp_dir / "model_metadata.json"
         metrics_file = tmp_dir / "model_metrics.json"
 
         urls = [
-            "https://google.com", "https://github.com", "https://wikipedia.org", "https://python.org",
-            "http://paypal-verification-update.xyz/login", "http://apple-id-verify.account-security.top/auth",
-            "http://192.168.1.1:8080/bank/login", "http://secure-login-account-update.net/signin",
+            "https://google.com",
+            "https://github.com",
+            "https://wikipedia.org",
+            "https://python.org",
+            "http://paypal-verification-update.xyz/login",
+            "http://apple-id-verify.account-security.top/auth",
+            "http://192.168.1.1:8080/bank/login",
+            "http://secure-login-account-update.net/signin",
         ]
         y = np.array([0, 0, 0, 0, 1, 1, 1, 1], dtype=int)
 
@@ -86,32 +92,38 @@ def ensure_model_available(tmp_dir: Path):
         joblib.dump(bundle, model_file)
 
         with open(metadata_file, "w", encoding="utf-8") as f:
-            json.dump({
-                "model_name": "SyntheticSmokeModel",
-                "model_version": "1.0.0-smoke",
-                "feature_count": len(FEATURE_NAMES),
-                "feature_names": FEATURE_NAMES,
-                "dataset_source": "Smoke Test Synthetic",
-                "dataset_size": len(urls),
-                "decision_threshold": 0.50,
-                "target_phishing_recall": 0.98,
-            }, f)
+            json.dump(
+                {
+                    "model_name": "SyntheticSmokeModel",
+                    "model_version": "1.0.0-smoke",
+                    "feature_count": len(FEATURE_NAMES),
+                    "feature_names": FEATURE_NAMES,
+                    "dataset_source": "Smoke Test Synthetic",
+                    "dataset_size": len(urls),
+                    "decision_threshold": 0.50,
+                    "target_phishing_recall": 0.98,
+                },
+                f,
+            )
 
         with open(metrics_file, "w", encoding="utf-8") as f:
-            json.dump({
-                "test_metrics": {
-                    "model_name": "SyntheticSmokeModel",
-                    "accuracy": 1.0,
-                    "precision": 1.0,
-                    "recall": 1.0,
-                    "f1": 1.0,
-                    "roc_auc": 1.0,
-                    "average_precision": 1.0,
-                    "confusion_matrix": [[4, 0], [0, 4]],
+            json.dump(
+                {
+                    "test_metrics": {
+                        "model_name": "SyntheticSmokeModel",
+                        "accuracy": 1.0,
+                        "precision": 1.0,
+                        "recall": 1.0,
+                        "f1": 1.0,
+                        "roc_auc": 1.0,
+                        "average_precision": 1.0,
+                        "confusion_matrix": [[4, 0], [0, 4]],
+                    },
+                    "validation_comparison": {"SyntheticSmokeModel": {"accuracy": 1.0, "f1": 1.0}},
+                    "feature_importances": [{"feature": "url_length", "importance": 0.5}],
                 },
-                "validation_comparison": {"SyntheticSmokeModel": {"accuracy": 1.0, "f1": 1.0}},
-                "feature_importances": [{"feature": "url_length", "importance": 0.5}],
-            }, f)
+                f,
+            )
 
         config.MODELS_DIR = tmp_dir
         config.MODEL_PATH = model_file
@@ -119,6 +131,7 @@ def ensure_model_available(tmp_dir: Path):
         config.METRICS_PATH = metrics_file
 
         import backend.predictor as p_mod
+
         p_mod.MODELS_DIR = tmp_dir
         p_mod.MODEL_PATH = model_file
         p_mod.METADATA_PATH = metadata_file
@@ -156,6 +169,7 @@ def main():
         smoke_db = tmp_dir / "smoke_test.db"
         config.DB_PATH = smoke_db
         import backend.database as db_mod
+
         db_mod.DB_PATH = smoke_db
         db_mod.init_db()
 
@@ -164,6 +178,7 @@ def main():
 
         # Import Flask app and clean rate limiters
         from backend.app import app, limiter
+
         limiter.reset()
 
         port = get_free_port()
@@ -171,6 +186,7 @@ def main():
         print(f"[*] Starting live Flask HTTP server on ephemeral port {port}…")
 
         from werkzeug.serving import make_server
+
         server = make_server("127.0.0.1", port, app)
         server_thread = threading.Thread(target=server.serve_forever, daemon=True)
         server_thread.start()
@@ -209,7 +225,9 @@ def main():
             assert "score" in res
             assert "confidence" in res
             assert "threshold" in res
-            print(f"[PASS] 2. POST /api/predict (Safe-looking) -> Prediction: {res.get('prediction')} ({res.get('confidence_str')})")
+            print(
+                f"[PASS] 2. POST /api/predict (Safe-looking) -> Prediction: {res.get('prediction')} ({res.get('confidence_str')})"
+            )
 
             # 3. POST /api/predict (Phishing-looking URL)
             phish_url = "http://192.168.1.105:8080/paypal-security-update/login.php"
@@ -218,7 +236,9 @@ def main():
             assert res.get("prediction") == "PHISHING"
             assert "explanation" in res
             assert isinstance(res["explanation"], list)
-            print(f"[PASS] 3. POST /api/predict (Phishing-looking) -> Prediction: {res.get('prediction')} | SHAP Contribs: {len(res['explanation'])}")
+            print(
+                f"[PASS] 3. POST /api/predict (Phishing-looking) -> Prediction: {res.get('prediction')} | SHAP Contribs: {len(res['explanation'])}"
+            )
 
             # 4. POST /api/predict-batch
             batch_urls = [
@@ -239,7 +259,9 @@ def main():
             assert res.get("total", 0) >= 3
             assert len(res.get("records", [])) >= 3
             assert "stats" in res
-            print(f"[PASS] 5. GET  /api/history -> Total logged: {res.get('total')}, Records returned: {len(res.get('records', []))}")
+            print(
+                f"[PASS] 5. GET  /api/history -> Total logged: {res.get('total')}, Records returned: {len(res.get('records', []))}"
+            )
 
             # 6. GET /api/model-metrics
             status, res = http_request(base_url, "GET", "/api/model-metrics")
@@ -247,7 +269,9 @@ def main():
             assert "test_metrics" in res
             assert "accuracy" in res["test_metrics"]
             assert "confusion_matrix" in res["test_metrics"]
-            print(f"[PASS] 6. GET  /api/model-metrics -> Model: {res['test_metrics'].get('model_name')}, Test Acc: {res['test_metrics'].get('accuracy')}")
+            print(
+                f"[PASS] 6. GET  /api/model-metrics -> Model: {res['test_metrics'].get('model_name')}, Test Acc: {res['test_metrics'].get('accuracy')}"
+            )
 
             # 7. Security Header Verification
             req = urllib.request.Request(f"{base_url}/api/health")

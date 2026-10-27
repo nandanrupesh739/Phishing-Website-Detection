@@ -5,23 +5,25 @@ Provides lightweight synthetic models, datasets, and isolated configurations
 so that the test suite runs completely independently of real dataset files
 or pre-trained models.
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
+
 import joblib
 import numpy as np
 import pytest
-from sklearn.linear_model import LogisticRegression
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.preprocessing import StandardScaler
 import scipy.sparse
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
 
 import backend.config as config
-from backend.features import FEATURE_NAMES, normalize_url, extract_url_features, features_to_vector
-import backend.predictor as predictor_module
 import backend.database as database_module
+import backend.predictor as predictor_module
+from backend.features import FEATURE_NAMES, extract_url_features, features_to_vector, normalize_url
 
 
 @pytest.fixture(scope="session")
@@ -138,8 +140,7 @@ def synthetic_model_dir(tmp_path_factory) -> Path:
             }
         },
         "feature_importances": [
-            {"feature": name, "importance": float(abs(clf.coef_[0][i]))}
-            for i, name in enumerate(FEATURE_NAMES[:10])
+            {"feature": name, "importance": float(abs(clf.coef_[0][i]))} for i, name in enumerate(FEATURE_NAMES[:10])
         ],
         "dataset_source": "Synthetic Testing Dataset",
         "dataset_size": len(urls),

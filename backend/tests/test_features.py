@@ -11,6 +11,7 @@ Tests verify that:
   • Advanced URL-only features compute accurately without crashing.
   • No URLs are fetched or visited during tests.
 """
+
 import sys
 from pathlib import Path
 

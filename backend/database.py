@@ -44,6 +44,7 @@ CREATE INDEX IF NOT EXISTS idx_scan_timestamp
 # Connection helper
 # ──────────────────────────────────────────────────────────────────────────
 
+
 @contextmanager
 def _get_conn() -> Generator[sqlite3.Connection, None, None]:
     """Yield a sqlite3 connection with row_factory enabled, then close it."""
@@ -59,6 +60,7 @@ def _get_conn() -> Generator[sqlite3.Connection, None, None]:
 # ──────────────────────────────────────────────────────────────────────────
 # Initialisation
 # ──────────────────────────────────────────────────────────────────────────
+
 
 def init_db() -> None:
     """Create the database file and tables if they do not exist, and migrate legacy schemas."""
@@ -79,6 +81,7 @@ def init_db() -> None:
 # Write
 # ──────────────────────────────────────────────────────────────────────────
 
+
 def insert_scan(
     submitted_url: str,
     prediction: str | None,
@@ -97,6 +100,7 @@ def insert_scan(
     """
     import hashlib
     import urllib.parse
+
     from backend import config
 
     should_anonymize = anonymize if anonymize is not None else config.ANONYMIZE_URLS
@@ -136,6 +140,7 @@ def insert_scan(
 # ──────────────────────────────────────────────────────────────────────────
 # Read
 # ──────────────────────────────────────────────────────────────────────────
+
 
 def get_history(limit: int = HISTORY_PAGE_SIZE, offset: int = 0) -> list[dict]:
     """
@@ -189,6 +194,7 @@ def get_total_count() -> int:
 # ──────────────────────────────────────────────────────────────────────────
 # Delete
 # ──────────────────────────────────────────────────────────────────────────
+
 
 def clear_history() -> int:
     """Delete all scan history records.  Returns number of rows deleted."""
