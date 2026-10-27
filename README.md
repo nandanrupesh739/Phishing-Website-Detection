@@ -11,7 +11,7 @@
 
 **An honest, production-hardened machine learning system detecting phishing URLs purely from URL structure and subwords — without network visits.**
 
-[Quick Start](#quick-start) · [Evaluation & Benchmarks](#model-evaluation--honest-benchmark-results) · [Architecture](#architecture) · [API Documentation](#api-documentation) · [Limitations](#honest-limitations--threat-model)
+[Quick Start](#quick-start) · [Frontend](#frontend-web-application) · [Screenshots](#application-screenshots) · [Evaluation & Benchmarks](#model-evaluation--honest-benchmark-results) · [Architecture](#architecture) · [Limitations](#honest-limitations--threat-model)
 
 </div>
 
@@ -53,6 +53,121 @@ flowchart TD
     Backend -->|"JSON Result + SHAP Contribs"| Frontend
     Frontend -->|"Visual Score + Explanation Cards"| User
 ```
+
+---
+
+## Frontend Web Application
+
+The frontend is a modern, responsive single-page web application built with **React 18**, **TypeScript**, **Tailwind CSS**, and **Recharts**. It provides security analysts and SOC teams with interactive phishing investigation tools, comprehensive telemetry, and explainable ML predictions.
+
+### Key Pages & Capabilities
+
+1. **Dashboard (`/`)**:
+   - High-level threat intelligence overview, recent scan telemetry, and quick scanner launcher.
+   - **Honest Test Split Metrics**: Displays real test set metrics (`Accuracy`, `Recall`, `Precision`, `F1-score`, `ROC-AUC`, and `Brier Score`) directly from the domain-grouped split evaluation (`/api/model-metrics`).
+   - **Out-of-Distribution External Evaluation Card**: If external benchmarks exist (`reports/external_eval.json` via `/api/external-eval`), displays performance on independent external phishing feeds.
+   - **Resilient Health Polling**: Polls `/api/health` every 30 seconds with a real-time status indicator (Green = model ready, Amber = backend ready without model, Red = offline banner).
+
+2. **URL Scanner (`/scanner`)**:
+   - **Zero-Network Static Safety**: URLs are treated strictly as plain text. The application **never visits or fetches** target URLs, and submitted URLs are rendered in non-clickable monospace wrappers (no `<a href>`).
+   - **Client-Side Pre-Validation**: Real-time character counter (up to 2,048 characters), whitespace trimming, and scheme validation (`http://` or `https://`).
+   - **Comprehensive Classification Card**: Calibrated confidence percentage, risk assessment (`SAFE`, `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`), phishing probability, decision threshold used (`0.9500`), and model version.
+   - **"Why this result?" Feature Contributions**: Horizontal bar chart powered by Recharts visualizing real-time TreeSHAP contributions from the model, highlighting structural indicators pushing toward PHISHING or SAFE.
+   - **Analyst Utilities**: "Copy Result" (plain-text summary) and "Copy URL" buttons, 6 pre-configured educational example URLs (3 benign, 3 suspicious), and persistent educational disclaimers.
+
+3. **Batch Scanner (`/batch`)**:
+   - Drag-and-drop file upload for `.csv` and `.txt` files (with 1 MB size limit check).
+   - Live queue counter and animated processing progress indicator.
+   - Interactive results table with prediction filters, search, and sorting.
+   - **CWE-1236 Formula Injection Protection**: CSV export automatically sanitizes spreadsheet formulas by escaping leading `=+-@` characters with a leading single-quote `'`.
+
+4. **Scan History (`/history`)**:
+   - Paginated historical logs with limit/offset querying.
+   - Search by URL/domain, filtering by prediction (`All`, `SAFE`, `PHISHING`) and risk level, with sorting by scan timestamp or score.
+   - **Phase 4 Privacy Mode Awareness**: Dynamically detects if URL anonymization is enabled and re-labels columns as `Domain / SHA-256 Hash`.
+   - **Admin Protected Purge**: Secure history clearance requiring the administrative secret key (kept in-memory only, never persisted to disk or localStorage) with confirmation modal.
+
+5. **Model Performance & Auditing (`/performance`)**:
+   - Model comparison table with cross-validation scores across 4 evaluated architectures.
+   - Test set confusion matrix with true positives, true negatives, and zero false positives.
+   - Interactive ROC curve and Calibration Reliability curve plots with guided "How to read this" technical explanations.
+   - Top 15 global feature importances with domain and structural metric definitions.
+
+6. **About & Methodology (`/about`)**:
+   - Dynamic model metadata populated directly from `/api/model-info` and `/api/model-metrics`.
+   - Complete academic dataset citation for the Prasad & Chandra (2023) PhiUSIIL dataset under CC BY 4.0.
+   - Transparent documentation of design principles, pipeline phases, and threat model boundaries.
+
+### Running the Frontend
+
+```bash
+# Navigate to the frontend directory
+cd frontend
+
+# Install dependencies
+npm install
+
+# Start Vite development server
+npm run dev
+```
+
+The application will launch at `http://localhost:5173`.
+
+### Vite Proxy Configuration
+
+The Vite dev server proxies all `/api` requests directly to the Flask backend running on `http://127.0.0.1:5000` via [`frontend/vite.config.ts`](frontend/vite.config.ts):
+
+```typescript
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true,
+      },
+    },
+  },
+});
+```
+
+This ensures seamless local development without CORS configuration and guarantees that all frontend network calls stay strictly contained to the local API.
+
+### Accessibility & Theming
+
+- **Keyboard Navigation & ARIA**: Full keyboard accessibility with visible `:focus-visible` focus rings, `aria-live="polite"` result announcements, and descriptive `aria-label` attributes on icon controls.
+- **Color Contrast & Dual Encoding**: Meets WCAG AA standards. Dual encoding (color + text + icon) ensures SAFE and PHISHING states are never distinguished by color alone.
+- **Responsive Layout**: Fluid layouts adapted for screens down to 360 px width without horizontal page clipping.
+- **Light / Dark Mode**: Built-in theme switcher stored in `localStorage` with automatic fallback to system preferences (`prefers-color-scheme`).
+
+---
+
+## Application Screenshots
+
+The following preview captures illustrate PhishGuard AI's primary interface pages:
+
+| Dashboard Overview | URL Scanner (Prediction & SHAP) |
+| :---: | :---: |
+| ![Dashboard](docs/images/dashboard.png) | ![Scanner Result](docs/images/scanner_result.png) |
+
+| Batch Scanner | Scan History |
+| :---: | :---: |
+| ![Batch Scanner](docs/images/batch_scanner.png) | ![Scan History](docs/images/scan_history.png) |
+
+| Model Performance & Auditing |
+| :---: |
+| ![Model Performance](docs/images/model_performance.png) |
+
+> 📸 **Screenshot Guide for Manual Capture**:
+> To replace the placeholder images above with live screenshots of your running instance:
+> 1. Start the Flask backend (`python -m backend.app`) and Vite frontend (`npm run dev`).
+> 2. Open `http://localhost:5173` in your browser at 1920x1080 resolution.
+> 3. Save the captures into `docs/images/` with the exact filenames:
+>    - `dashboard.png`: Dashboard overview with telemetry cards and recent scans.
+>    - `scanner_result.png`: Scanner page showing a completed scan result with the "Why this result?" SHAP chart.
+>    - `batch_scanner.png`: Batch scanner page after processing a multi-URL CSV or TXT list.
+>    - `scan_history.png`: Scan history page with search/filters applied.
+>    - `model_performance.png`: Model Performance page showing the confusion matrix and calibration curves.
 
 ---
 
@@ -311,4 +426,10 @@ npm test
 ```powershell
 cd frontend
 npm run lint
+```
+
+### Frontend Production Build:
+```powershell
+cd frontend
+npm run build
 ```
