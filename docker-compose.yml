@@ -1,41 +1,46 @@
 # ==============================================================================
 # PhishGuard AI — Docker Compose Orchestration
 # ==============================================================================
-#
-# IMPORTANT NOTE ON VOLUMES:
-# - models/: Mount host ./models to /app/models so the backend can load the
-#            trained classifier without requiring large binary model files in
-#            the container image.
-# - data/:   Mount host ./data to /app/data to supply the UCI dataset for
-#            training runs inside the container without bloating images.
+# Note:
+# 1. The model must be trained before starting the application:
+#    - On host: python download_data.py && python train.py
+#    - Or via one-off compose run: docker compose run --rm backend python train.py
+# 2. Volumes mount models/, data/, and SQLite database from the host to ensure persistence
+#    without baking large binaries or dynamic state into container image layers.
+# 3. Backend is strictly bound to the internal compose network (no published host ports).
+#    Frontend publishes port 5173 (or $FRONTEND_PORT) and proxies /api to backend:5000.
 # ==============================================================================
-
-version: '3.8'
 
 services:
   backend:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: backend/Dockerfile
     container_name: phishguard-backend
     restart: unless-stopped
-    ports:
-      - "5000:5000"
+    expose:
+      - "5000"
+    env_file:
+      - .env
     environment:
       - FLASK_HOST=0.0.0.0
       - FLASK_PORT=5000
       - FLASK_DEBUG=false
-      - SECRET_KEY=docker-production-secret-phishguard-ai-key-32ch
-      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:80
-      - RATE_LIMIT_PREDICT=60 per minute
-      - MAX_BATCH_SIZE=100
     volumes:
       # Mount host models directory (contains model binaries and metrics JSON)
       - ./models:/app/models:ro
-      # Mount host data directory (contains UCI dataset if running training)
+      # Mount host data directory (contains dataset)
       - ./data:/app/data:ro
       # Persist SQLite scan history database on host
       - ./phishguard.db:/app/phishguard.db:rw
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - phishguard-network
 
   frontend:
     build:
@@ -44,6 +49,13 @@ services:
     container_name: phishguard-frontend
     restart: unless-stopped
     ports:
-      - "5173:80"
+      - "${FRONTEND_PORT:-5173}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    networks:
+      - phishguard-network
+
+networks:
+  phishguard-network:
+    driver: bridge

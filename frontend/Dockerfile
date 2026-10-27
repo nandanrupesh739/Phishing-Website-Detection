@@ -1,5 +1,5 @@
 # ==============================================================================
-# PhishGuard AI — Frontend Container (Multi-stage build with Nginx)
+# PhishGuard AI — Frontend Multi-Stage Build (Node.js 20 -> Nginx Alpine)
 # ==============================================================================
 FROM node:20-alpine AS build
 
@@ -15,21 +15,7 @@ RUN npm run build
 FROM nginx:alpine
 
 COPY --from=build /app/dist /usr/share/nginx/html
-
-# Custom nginx config to handle SPA routing and proxy /api to backend
-RUN printf 'server {\n\
-    listen 80;\n\
-    location / {\n\
-        root /usr/share/nginx/html;\n\
-        index index.html;\n\
-        try_files $uri $uri/ /index.html;\n\
-    }\n\
-    location /api/ {\n\
-        proxy_pass http://backend:5000/api/;\n\
-        proxy_set_header Host $host;\n\
-        proxy_set_header X-Real-IP $remote_addr;\n\
-    }\n\
-}\n' > /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
